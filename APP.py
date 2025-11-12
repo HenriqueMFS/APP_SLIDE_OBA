@@ -12,16 +12,59 @@ import re
 import unicodedata
 from PIL import Image
 
+# -------------------- CONSTANTES --------------------
+# Configurações de imagem
+LOGO_PATH = "logo_jornada.png"
+LOGO_WIDTH = 1235
+LOGO_HEIGHT = 426
+GIF_PATH = "tiapamela.gif"
+
+# Configurações de layout Streamlit
+PAGE_LAYOUT = "wide"
+COLUMN_PROPORTIONS = [1, 4, 1]
+
+# Configurações de fonte
+FONT_NAME = "Lexend"
+FONT_SIZE_SMALL = 20
+FONT_SIZE_MEDIUM = 26.5
+FONT_SIZE_LARGE = 28
+FONT_SIZE_XLARGE = 35
+
+# Cores RGB
+COLOR_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+COLOR_BLUE = RGBColor(0x00, 0x6F, 0xC0)
+
+# Shape types
+SHAPE_TYPE_PICTURE = 13
+
+# Placeholders de template
+PLACEHOLDER_VALIDO = "{{LANCAMENTOS_VALIDOS}}"
+PLACEHOLDER_EQUIPE = "{{NOME_EQUIPE}}"
+PLACEHOLDER_ESCOLA = "{{NOME_ESCOLA}}"
+PLACEHOLDER_CIDADE_UF = "{{CIDADE_UF}}"
+PLACEHOLDER_ALUNOS = "{{NOMES_ALUNOS}}"
+
+# Mensagens de interface
+MSG_UPLOAD_WARNING = "CERTIFIQUE-SE DE ESTÁ FAZENDO O UPLOAD DOS ARQUIVOS CORRETOS ANTES DE GERAR OS SLIDES!"
+MSG_SEND_BOTH_FILES = "Envie ambos os arquivos."
+MSG_NO_DATA_FOUND = "Nenhum dado encontrado."
+MSG_NOME_ARQUIVO_DEFAULT = "Apresentacao_Final_Equipes"
+MSG_CAPTION_READY = "Apresentação pronta! 🚀"
+
+# Namespace XML
+XML_NAMESPACE_DRAWINGML = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+XML_NAMESPACE_RELATIONSHIPS = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+
 # -------------------- CONFIGURAÇÃO INICIAL --------------------
-st.set_page_config(layout="wide")
-logo = Image.open("logo_jornada.png")
+st.set_page_config(layout=PAGE_LAYOUT)
+logo = Image.open(LOGO_PATH)
 resample_filter = getattr(Image, "Resampling", Image).LANCZOS
-logo = logo.resize((1235, 426), resample_filter)
-_, col_logo, _ = st.columns([1, 4, 1])
+logo = logo.resize((LOGO_WIDTH, LOGO_HEIGHT), resample_filter)
+_, col_logo, _ = st.columns(COLUMN_PROPORTIONS)
 with col_logo:
-    st.image(logo, width=1235)
+    st.image(logo, width=LOGO_WIDTH)
 st.title("🚀 Gerador Automático de Slides")
-st.info("CERTIFIQUE-SE DE ESTÁ FAZENDO O UPLOAD DOS ARQUIVOS CORRETOS ANTES DE GERAR OS SLIDES!")
+st.info(MSG_UPLOAD_WARNING)
 
 # -------------------- FUNÇÕES AUXILIARES --------------------
 def formatar_texto(texto, maiusculo_estado=False):
@@ -39,7 +82,7 @@ def normalizar_texto_base(texto):
 def sanitizar_nome_arquivo(nome):
     nome = (nome or "").strip()
     nome = re.sub(r'[\\/:*?"<>|]', "", nome)
-    return nome or "Apresentacao_Final_Equipes"
+    return nome or MSG_NOME_ARQUIVO_DEFAULT
 
 def extrair_dados(uploaded_file):
     doc = Document(uploaded_file)
@@ -247,11 +290,11 @@ def extrair_dados(uploaded_file):
 
         info = membros[0]
         dados_finais.append({
-            "{{LANCAMENTOS_VALIDOS}}": f"ALCANCE: {info['Valido']} m",
-            "{{NOME_EQUIPE}}": f"Equipe: {equipe_nome.split()[-1]}",
-            "{{NOME_ESCOLA}}": formatar_texto(info["Escola"]),
-            "{{CIDADE_UF}}": f"{formatar_texto(info['Cidade'])} / {formatar_texto(info['Estado'], True)}",
-            "{{NOMES_ALUNOS}}": nomes_formatados
+            PLACEHOLDER_VALIDO: f"ALCANCE: {info['Valido']} m",
+            PLACEHOLDER_EQUIPE: f"Equipe: {equipe_nome.split()[-1]}",
+            PLACEHOLDER_ESCOLA: formatar_texto(info["Escola"]),
+            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(info['Cidade'])} / {formatar_texto(info['Estado'], True)}",
+            PLACEHOLDER_ALUNOS: nomes_formatados
         })
     return dados_finais
 
@@ -261,7 +304,7 @@ def duplicate_slide_with_media(prs, source_slide):
     new_slide = prs.slides.add_slide(layout)
     for shape in source_slide.shapes:
         new_el = deepcopy(shape.element)
-        if shape.shape_type == 13:  # picture
+        if shape.shape_type == SHAPE_TYPE_PICTURE:
             try:
                 img_blob = shape.image.blob
             except Exception:
@@ -269,9 +312,9 @@ def duplicate_slide_with_media(prs, source_slide):
             if img_blob:
                 image_part, new_rId = new_slide.part.get_or_add_image_part(BytesIO(img_blob))
                 new_el_xml = etree.fromstring(new_el.xml)
-                blips = new_el_xml.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+                blips = new_el_xml.findall(f'.//{XML_NAMESPACE_DRAWINGML}blip')
                 for blip in blips:
-                    blip.set('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed', new_rId)
+                    blip.set(f'{XML_NAMESPACE_RELATIONSHIPS}embed', new_rId)
                 from pptx.oxml import parse_xml
                 new_el = parse_xml(etree.tostring(new_el_xml, encoding='utf-8'))
         new_slide.shapes._spTree.insert_element_before(new_el, 'p:extLst')
@@ -288,20 +331,20 @@ def replace_placeholders_in_shape(shape, team_data):
     # parágrafos diferentes, lidamos com todos de uma vez para garantir que as duas
     # informações sejam aplicadas com o mesmo estilo.
     frame_text = "\n".join("".join(run.text for run in paragraph.runs) for paragraph in tf.paragraphs)
-    if "{{NOMES_ALUNOS}}" in frame_text and "{{NOME_EQUIPE}}" in frame_text:
+    if PLACEHOLDER_ALUNOS in frame_text and PLACEHOLDER_EQUIPE in frame_text:
         tf.clear()
-        linhas = team_data["{{NOMES_ALUNOS}}"].split("\n") + [team_data["{{NOME_EQUIPE}}"]]
+        linhas = team_data[PLACEHOLDER_ALUNOS].split("\n") + [team_data[PLACEHOLDER_EQUIPE]]
         for i, nome in enumerate(linhas):
             p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
             run = p.add_run()
             run.text = nome
-            run.font.name = "Lexend"
+            run.font.name = FONT_NAME
             run.font.bold = True
             if i == len(linhas) - 1:  # última linha = nome da equipe
-                run.font.size = Pt(20)
+                run.font.size = Pt(FONT_SIZE_SMALL)
             else:
-                run.font.size = Pt(26.5)
-            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                run.font.size = Pt(FONT_SIZE_MEDIUM)
+            run.font.color.rgb = COLOR_WHITE
             p.alignment = PP_ALIGN.CENTER
         return
 
@@ -329,71 +372,71 @@ def replace_placeholders_in_shape(shape, team_data):
             paragraph._p.remove(paragraph.runs[0]._r)
 
         # --- ALCANCE ---
-        if selected_key == "{{LANCAMENTOS_VALIDOS}}":
+        if selected_key == PLACEHOLDER_VALIDO:
             match = re.match(r"(ALCANCE:\s*)([\d,.]+ m)", new_text, re.IGNORECASE)
             if match:
                 prefix, valor = match.groups()
                 run1 = paragraph.add_run()
                 run1.text = prefix
-                run1.font.name = "Lexend"
+                run1.font.name = FONT_NAME
                 run1.font.bold = False
-                run1.font.size = Pt(28)
-                run1.font.color.rgb = RGBColor(0x00, 0x6F, 0xC0)
+                run1.font.size = Pt(FONT_SIZE_LARGE)
+                run1.font.color.rgb = COLOR_BLUE
 
                 run2 = paragraph.add_run()
                 run2.text = valor
-                run2.font.name = "Lexend"
+                run2.font.name = FONT_NAME
                 run2.font.bold = True
                 run2.font.underline = True
-                run2.font.size = Pt(35)
-                run2.font.color.rgb = RGBColor(0x00, 0x6F, 0xC0)
+                run2.font.size = Pt(FONT_SIZE_XLARGE)
+                run2.font.color.rgb = COLOR_BLUE
 
        # --- SOMENTE NOMES ---
-        elif selected_key == "{{NOMES_ALUNOS}}":
+        elif selected_key == PLACEHOLDER_ALUNOS:
             tf.clear()
-            linhas = team_data["{{NOMES_ALUNOS}}"].split("\n")
+            linhas = team_data[PLACEHOLDER_ALUNOS].split("\n")
             for i, nome in enumerate(linhas):
                 p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
                 run = p.add_run()
                 run.text = nome
-                run.font.name = "Lexend"
+                run.font.name = FONT_NAME
                 run.font.bold = True
-                run.font.size = Pt(26.5)
-                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                run.font.size = Pt(FONT_SIZE_MEDIUM)
+                run.font.color.rgb = COLOR_WHITE
                 p.alignment = PP_ALIGN.CENTER
 
         # --- NOME DA EQUIPE (se estiver sozinho) ---
-        elif selected_key == "{{NOME_EQUIPE}}":
+        elif selected_key == PLACEHOLDER_EQUIPE:
             run = paragraph.add_run()
             run.text = new_text
-            run.font.name = "Lexend"
+            run.font.name = FONT_NAME
             run.font.bold = True
-            run.font.size = Pt(20)
-            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            run.font.size = Pt(FONT_SIZE_SMALL)
+            run.font.color.rgb = COLOR_WHITE
             paragraph.alignment = PP_ALIGN.CENTER
 
         # --- ESCOLA + CIDADE ---
-        elif "{{NOME_ESCOLA}}" in full_text and "{{CIDADE_UF}}" in full_text:
+        elif PLACEHOLDER_ESCOLA in full_text and PLACEHOLDER_CIDADE_UF in full_text:
             tf.clear()
-            partes = [team_data["{{NOME_ESCOLA}}"], team_data["{{CIDADE_UF}}"]]
+            partes = [team_data[PLACEHOLDER_ESCOLA], team_data[PLACEHOLDER_CIDADE_UF]]
             for i, parte in enumerate(partes):
                 p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
                 run = p.add_run()
                 run.text = parte
-                run.font.name = "Lexend"
+                run.font.name = FONT_NAME
                 run.font.bold = True
-                run.font.size = Pt(20)
-                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                run.font.size = Pt(FONT_SIZE_SMALL)
+                run.font.color.rgb = COLOR_WHITE
                 p.alignment = PP_ALIGN.CENTER
 
         # --- SOMENTE ESCOLA OU CIDADE (caso isolado) ---
-        elif selected_key in ("{{NOME_ESCOLA}}", "{{CIDADE_UF}}"):
+        elif selected_key in (PLACEHOLDER_ESCOLA, PLACEHOLDER_CIDADE_UF):
             run = paragraph.add_run()
             run.text = new_text
-            run.font.name = "Lexend"
+            run.font.name = FONT_NAME
             run.font.bold = True
-            run.font.size = Pt(20)
-            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            run.font.size = Pt(FONT_SIZE_SMALL)
+            run.font.color.rgb = COLOR_WHITE
             paragraph.alignment = PP_ALIGN.CENTER
 
 
@@ -434,12 +477,12 @@ if st.button("Confirmar nome do arquivo"):
 
 if st.button("✨ Gerar Apresentação"):
     if not docx_file or not pptx_file:
-        st.warning("Envie ambos os arquivos.")
+        st.warning(MSG_SEND_BOTH_FILES)
     else:
         try:
             dados = extrair_dados(docx_file)
             if not dados:
-                st.warning("Nenhum dado encontrado.")
+                st.warning(MSG_NO_DATA_FOUND)
             else:
                 prs_final = gerar_apresentacao(dados, pptx_file)
                 buf = BytesIO()
@@ -447,7 +490,7 @@ if st.button("✨ Gerar Apresentação"):
                 buf.seek(0)
                 st.success(f"Slides gerados: {len(dados)}")
 
-                st.image("tiapamela.gif", caption="Apresentação pronta! 🚀", use_container_width=True)
+                st.image(GIF_PATH, caption=MSG_CAPTION_READY, use_container_width=True)
 
                 st.download_button(
                     "📥 Baixar Apresentação Final",
