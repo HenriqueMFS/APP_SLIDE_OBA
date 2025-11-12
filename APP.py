@@ -238,9 +238,128 @@ def _identificar_colunas_tabela(cabecalho):
 
     return coluna_por_campo
 
+def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
+    """
+    Processa as linhas de uma tabela e extrai registros.
+
+    Args:
+        tabela: Tabela do documento Word
+        coluna_por_campo: Dict mapeando campos para índices de colunas
+        campos_esperados: Lista de campos a serem extraídos
+
+    Returns:
+        Lista de registros (dicts) extraídos da tabela
+    """
+    registros = []
+
+    def obter_valor(linha_celulas, chave):
+        idx = coluna_por_campo.get(chave)
+        if idx is not None and idx < len(linha_celulas):
+            return linha_celulas[idx].strip()
+        return ""
+
+    for linha in tabela.rows[1:]:  # Pula o cabeçalho
+        celulas = [c.text for c in linha.cells]
+
+        # Ignora linhas vazias
+        if not any(c.strip() for c in celulas):
+            continue
+
+        registro = {chave: obter_valor(celulas, chave) for chave in campos_esperados}
+
+        # Ignora registros sem equipe e sem nome
+        if not registro["Equipe"] and not registro["Nome"]:
+            continue
+
+        registros.append({
+            "Valido": registro["Valido"],
+            "Equipe": registro["Equipe"],
+            "Funcao": registro["Funcao"].lower(),
+            "Escola": registro["Escola"],
+            "Cidade": registro["Cidade"],
+            "Estado": registro["Estado"],
+            "Nome": registro["Nome"]
+        })
+
+    return registros
+
+def _organizar_dados_equipes(registros):
+    """
+    Organiza registros por equipe e formata dados finais para apresentação.
+
+    Args:
+        registros: Lista de registros extraídos das tabelas
+
+    Returns:
+        Lista de dicts com dados formatados para os slides
+    """
+    # Agrupa registros por equipe
+    equipes = defaultdict(list)
+    for r in registros:
+        equipes[r["Equipe"]].append(r)
+
+    # Ordena equipes pelo alcance (lançamento válido)
+    def chave_ord(membros):
+        try:
+            return float(membros[0]["Valido"].replace(",", "."))
+        except:
+            return float("inf")
+
+    equipes_ordenadas = sorted(equipes.items(), key=lambda x: chave_ord(x[1]))
+
+    # Formata dados finais para cada equipe
+    dados_finais = []
+    for equipe_nome, membros in equipes_ordenadas:
+        # Separa membros por função
+        lider = [m for m in membros if "líder" in m["Funcao"] or "lider" in m["Funcao"]]
+        acompanhante = [m for m in membros if "acompanhante" in m["Funcao"]]
+        alunos = sorted(
+            [m for m in membros if "aluno" in m["Funcao"]],
+            key=lambda m: normalizar_texto_base(m["Nome"])
+        )
+
+        # Formata nomes
+        nomes_lider = formatar_texto(lider[0]["Nome"]) if lider else ""
+        nomes_acompanhante = formatar_texto(acompanhante[0]["Nome"]) if acompanhante else ""
+
+        # Monta lista de nomes na ordem: líder, acompanhante, alunos
+        linhas_nomes = []
+        if nomes_lider:
+            linhas_nomes.append(nomes_lider)
+        if nomes_acompanhante:
+            linhas_nomes.append(nomes_acompanhante)
+        linhas_nomes += [formatar_texto(a["Nome"]) for a in alunos]
+
+        nomes_formatados = "\n".join(linhas_nomes)
+
+        # Pega informações da equipe (primeira entrada)
+        info = membros[0]
+
+        # Monta dict com placeholders para o slide
+        dados_finais.append({
+            PLACEHOLDER_VALIDO: f"ALCANCE: {info['Valido']} m",
+            PLACEHOLDER_EQUIPE: f"Equipe: {equipe_nome.split()[-1]}",
+            PLACEHOLDER_ESCOLA: formatar_texto(info["Escola"]),
+            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(info['Cidade'])} / {formatar_texto(info['Estado'], True)}",
+            PLACEHOLDER_ALUNOS: nomes_formatados
+        })
+
+    return dados_finais
+
 def extrair_dados(uploaded_file):
+    """
+    Extrai dados de equipes de um arquivo DOCX e formata para geração de slides.
+
+    Args:
+        uploaded_file: Arquivo DOCX contendo tabelas com dados das equipes
+
+    Returns:
+        Lista de dicts com dados formatados para preencher os slides
+    """
     doc = Document(uploaded_file)
     registros = []
+
+    # Processa todas as tabelas do documento
     for tabela in doc.tables:
         if not tabela.rows:
             continue
@@ -253,73 +372,13 @@ def extrair_dados(uploaded_file):
         # Campos esperados para extração
         campos_esperados = ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
 
-        def obter_valor(linha_celulas, chave):
-            idx = coluna_por_campo.get(chave)
-            if idx is not None and idx < len(linha_celulas):
-                return linha_celulas[idx].strip()
-            return ""
+        # Processa linhas da tabela
+        registros_tabela = _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados)
+        registros.extend(registros_tabela)
 
-        for linha in tabela.rows[1:]:
-            celulas = [c.text for c in linha.cells]
-            if not any(c.strip() for c in celulas):
-                continue
+    # Organiza registros por equipe e formata dados finais
+    dados_finais = _organizar_dados_equipes(registros)
 
-            registro = {chave: obter_valor(celulas, chave) for chave in campos_esperados}
-
-            if not registro["Equipe"] and not registro["Nome"]:
-                continue
-
-            registros.append({
-                "Valido": registro["Valido"],
-                "Equipe": registro["Equipe"],
-                "Funcao": registro["Funcao"].lower(),
-                "Escola": registro["Escola"],
-                "Cidade": registro["Cidade"],
-                "Estado": registro["Estado"],
-                "Nome": registro["Nome"]
-            })
-
-    equipes = defaultdict(list)
-    for r in registros:
-        equipes[r["Equipe"]].append(r)
-
-    def chave_ord(membros):
-        try:
-            return float(membros[0]["Valido"].replace(",", "."))
-        except:
-            return float("inf")
-
-    equipes_ordenadas = sorted(equipes.items(), key=lambda x: chave_ord(x[1]))
-
-    dados_finais = []
-    for equipe_nome, membros in equipes_ordenadas:
-        lider = [m for m in membros if "líder" in m["Funcao"] or "lider" in m["Funcao"]]
-        acompanhante = [m for m in membros if "acompanhante" in m["Funcao"]]
-        alunos = sorted(
-            [m for m in membros if "aluno" in m["Funcao"]],
-            key=lambda m: normalizar_texto_base(m["Nome"])
-        )
-
-        nomes_lider = formatar_texto(lider[0]["Nome"]) if lider else ""
-        nomes_acompanhante = formatar_texto(acompanhante[0]["Nome"]) if acompanhante else ""
-
-        linhas_nomes = []
-        if nomes_lider:
-            linhas_nomes.append(nomes_lider)
-        if nomes_acompanhante:
-            linhas_nomes.append(nomes_acompanhante)
-        linhas_nomes += [formatar_texto(a["Nome"]) for a in alunos]
-
-        nomes_formatados = "\n".join(linhas_nomes)
-
-        info = membros[0]
-        dados_finais.append({
-            PLACEHOLDER_VALIDO: f"ALCANCE: {info['Valido']} m",
-            PLACEHOLDER_EQUIPE: f"Equipe: {equipe_nome.split()[-1]}",
-            PLACEHOLDER_ESCOLA: formatar_texto(info["Escola"]),
-            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(info['Cidade'])} / {formatar_texto(info['Estado'], True)}",
-            PLACEHOLDER_ALUNOS: nomes_formatados
-        })
     return dados_finais
 
 # -------------------- DUPLICAÇÃO DE SLIDE --------------------
