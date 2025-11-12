@@ -94,6 +94,14 @@ def _identificar_colunas_tabela(cabecalho):
     Returns:
         Dict mapeando campos esperados para índices de colunas
     """
+    # Validação: cabeçalho não pode ser vazio
+    if not cabecalho:
+        return {}
+
+    # Validação: cabeçalho deve ter pelo menos uma coluna não vazia
+    if not any(texto.strip() for texto in cabecalho):
+        return {}
+
     header_norm = [normalizar_texto_base(texto) for texto in cabecalho]
 
     # Definição de aliases para cada campo
@@ -250,11 +258,22 @@ def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
     Returns:
         Lista de registros (dicts) extraídos da tabela
     """
+    # Validação: parâmetros não podem ser None
+    if not tabela or not coluna_por_campo or not campos_esperados:
+        return []
+
+    # Validação: tabela deve ter pelo menos 2 linhas (cabeçalho + dados)
+    if len(tabela.rows) < 2:
+        return []
+
     registros = []
 
     def obter_valor(linha_celulas, chave):
+        """Obtém valor de uma célula com validação de índice"""
+        if not linha_celulas:
+            return ""
         idx = coluna_por_campo.get(chave)
-        if idx is not None and idx < len(linha_celulas):
+        if idx is not None and 0 <= idx < len(linha_celulas):
             return linha_celulas[idx].strip()
         return ""
 
@@ -293,16 +312,39 @@ def _organizar_dados_equipes(registros):
     Returns:
         Lista de dicts com dados formatados para os slides
     """
-    # Agrupa registros por equipe
+    # Validação: registros não podem ser vazios
+    if not registros:
+        return []
+
+    # Validação: registros devem ser uma lista
+    if not isinstance(registros, list):
+        return []
+
+    # Agrupa registros por equipe (ignora registros sem nome de equipe)
     equipes = defaultdict(list)
     for r in registros:
-        equipes[r["Equipe"]].append(r)
+        # Validação: registro deve ter chave "Equipe" e não ser vazio
+        if isinstance(r, dict) and r.get("Equipe"):
+            equipes[r["Equipe"]].append(r)
+
+    # Validação: se não houver equipes, retorna lista vazia
+    if not equipes:
+        return []
 
     # Ordena equipes pelo alcance (lançamento válido)
     def chave_ord(membros):
+        """Extrai chave de ordenação com tratamento de erros robusto"""
         try:
-            return float(membros[0]["Valido"].replace(",", "."))
-        except:
+            if not membros or not isinstance(membros, list):
+                return float("inf")
+            primeiro = membros[0]
+            if not isinstance(primeiro, dict):
+                return float("inf")
+            valido = primeiro.get("Valido", "")
+            if not valido:
+                return float("inf")
+            return float(str(valido).replace(",", "."))
+        except (ValueError, AttributeError, KeyError):
             return float("inf")
 
     equipes_ordenadas = sorted(equipes.items(), key=lambda x: chave_ord(x[1]))
@@ -310,17 +352,23 @@ def _organizar_dados_equipes(registros):
     # Formata dados finais para cada equipe
     dados_finais = []
     for equipe_nome, membros in equipes_ordenadas:
-        # Separa membros por função
-        lider = [m for m in membros if "líder" in m["Funcao"] or "lider" in m["Funcao"]]
-        acompanhante = [m for m in membros if "acompanhante" in m["Funcao"]]
+        # Validação: membros não podem ser vazios
+        if not membros:
+            continue
+
+        # Separa membros por função com validação
+        lider = [m for m in membros if isinstance(m, dict) and
+                 ("líder" in str(m.get("Funcao", "")).lower() or "lider" in str(m.get("Funcao", "")).lower())]
+        acompanhante = [m for m in membros if isinstance(m, dict) and
+                        "acompanhante" in str(m.get("Funcao", "")).lower()]
         alunos = sorted(
-            [m for m in membros if "aluno" in m["Funcao"]],
-            key=lambda m: normalizar_texto_base(m["Nome"])
+            [m for m in membros if isinstance(m, dict) and "aluno" in str(m.get("Funcao", "")).lower()],
+            key=lambda m: normalizar_texto_base(m.get("Nome", ""))
         )
 
-        # Formata nomes
-        nomes_lider = formatar_texto(lider[0]["Nome"]) if lider else ""
-        nomes_acompanhante = formatar_texto(acompanhante[0]["Nome"]) if acompanhante else ""
+        # Formata nomes com validação
+        nomes_lider = formatar_texto(lider[0].get("Nome", "")) if lider and lider[0].get("Nome") else ""
+        nomes_acompanhante = formatar_texto(acompanhante[0].get("Nome", "")) if acompanhante and acompanhante[0].get("Nome") else ""
 
         # Monta lista de nomes na ordem: líder, acompanhante, alunos
         linhas_nomes = []
@@ -328,19 +376,27 @@ def _organizar_dados_equipes(registros):
             linhas_nomes.append(nomes_lider)
         if nomes_acompanhante:
             linhas_nomes.append(nomes_acompanhante)
-        linhas_nomes += [formatar_texto(a["Nome"]) for a in alunos]
+        linhas_nomes += [formatar_texto(a.get("Nome", "")) for a in alunos if a.get("Nome")]
 
         nomes_formatados = "\n".join(linhas_nomes)
 
-        # Pega informações da equipe (primeira entrada)
-        info = membros[0]
+        # Pega informações da equipe (primeira entrada com validação)
+        info = membros[0] if membros else {}
 
-        # Monta dict com placeholders para o slide
+        # Validação: info deve ter dados mínimos necessários
+        if not isinstance(info, dict) or not info.get("Valido"):
+            continue
+
+        # Extrai partes do nome da equipe com validação
+        equipe_partes = str(equipe_nome).split() if equipe_nome else []
+        equipe_numero = equipe_partes[-1] if equipe_partes else "?"
+
+        # Monta dict com placeholders para o slide com valores seguros
         dados_finais.append({
-            PLACEHOLDER_VALIDO: f"ALCANCE: {info['Valido']} m",
-            PLACEHOLDER_EQUIPE: f"Equipe: {equipe_nome.split()[-1]}",
-            PLACEHOLDER_ESCOLA: formatar_texto(info["Escola"]),
-            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(info['Cidade'])} / {formatar_texto(info['Estado'], True)}",
+            PLACEHOLDER_VALIDO: f"ALCANCE: {info.get('Valido', '?')} m",
+            PLACEHOLDER_EQUIPE: f"Equipe: {equipe_numero}",
+            PLACEHOLDER_ESCOLA: formatar_texto(info.get("Escola", "")),
+            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(info.get('Cidade', ''))} / {formatar_texto(info.get('Estado', ''), True)}",
             PLACEHOLDER_ALUNOS: nomes_formatados
         })
 
@@ -356,12 +412,30 @@ def extrair_dados(uploaded_file):
     Returns:
         Lista de dicts com dados formatados para preencher os slides
     """
-    doc = Document(uploaded_file)
+    # Validação: arquivo não pode ser None
+    if not uploaded_file:
+        return []
+
+    try:
+        doc = Document(uploaded_file)
+    except Exception as e:
+        # Erro ao abrir o documento
+        print(f"Erro ao abrir documento: {e}")
+        return []
+
+    # Validação: documento deve ter tabelas
+    if not doc.tables:
+        return []
+
     registros = []
 
     # Processa todas as tabelas do documento
     for tabela in doc.tables:
-        if not tabela.rows:
+        if not tabela or not tabela.rows:
+            continue
+
+        # Validação: tabela deve ter pelo menos cabeçalho
+        if len(tabela.rows) < 1:
             continue
 
         cabecalho = [c.text.strip() for c in tabela.rows[0].cells]
@@ -369,12 +443,17 @@ def extrair_dados(uploaded_file):
         # Identifica mapeamento de colunas
         coluna_por_campo = _identificar_colunas_tabela(cabecalho)
 
+        # Se não identificou nenhuma coluna, pula esta tabela
+        if not coluna_por_campo:
+            continue
+
         # Campos esperados para extração
         campos_esperados = ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
 
         # Processa linhas da tabela
         registros_tabela = _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados)
-        registros.extend(registros_tabela)
+        if registros_tabela:
+            registros.extend(registros_tabela)
 
     # Organiza registros por equipe e formata dados finais
     dados_finais = _organizar_dados_equipes(registros)
@@ -525,20 +604,56 @@ def replace_placeholders_in_shape(shape, team_data):
 
 # -------------------- GERAÇÃO FINAL --------------------
 def gerar_apresentacao(dados, template_stream):
-    prs = Presentation(template_stream)
-    if not dados or not prs.slides:
+    """
+    Gera apresentação PPTX com dados das equipes.
+
+    Args:
+        dados: Lista de dicts com dados formatados das equipes
+        template_stream: Stream do arquivo PPTX template
+
+    Returns:
+        Objeto Presentation com os slides gerados
+    """
+    # Validação: template não pode ser None
+    if not template_stream:
+        return None
+
+    try:
+        prs = Presentation(template_stream)
+    except Exception as e:
+        print(f"Erro ao abrir template PPTX: {e}")
+        return None
+
+    # Validação: dados e slides do template
+    if not dados or not isinstance(dados, list):
+        return prs
+
+    if not prs.slides or len(prs.slides) == 0:
         return prs
 
     modelo = prs.slides[0]
     slides_para_preencher = [modelo]
 
+    # Duplica slides conforme necessário
     for _ in range(len(dados) - 1):
-        novo_slide = duplicate_slide_with_media(prs, modelo)
-        slides_para_preencher.append(novo_slide)
+        try:
+            novo_slide = duplicate_slide_with_media(prs, modelo)
+            if novo_slide:
+                slides_para_preencher.append(novo_slide)
+        except Exception as e:
+            print(f"Erro ao duplicar slide: {e}")
+            continue
 
+    # Preenche placeholders em cada slide
     for slide, team in zip(slides_para_preencher, dados):
-        for shape in slide.shapes:
-            replace_placeholders_in_shape(shape, team)
+        if not slide or not isinstance(team, dict):
+            continue
+        try:
+            for shape in slide.shapes:
+                replace_placeholders_in_shape(shape, team)
+        except Exception as e:
+            print(f"Erro ao preencher placeholders: {e}")
+            continue
 
     return prs
 
