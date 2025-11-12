@@ -25,10 +25,69 @@ st.info("CERTIFIQUE-SE DE ESTÁ FAZENDO O UPLOAD DOS ARQUIVOS CORRETOS ANTES DE 
 
 # -------------------- FUNÇÕES AUXILIARES --------------------
 def formatar_texto(texto, maiusculo_estado=False):
+    """
+    Formata texto removendo espaços extras e aplicando capitalização.
+
+    Esta função normaliza espaços em branco e aplica formatação de texto,
+    convertendo para maiúsculas completas ou title case (primeira letra
+    maiúscula em cada palavra).
+
+    Args:
+        texto (str): Texto a ser formatado.
+        maiusculo_estado (bool, optional): Se True, converte todo o texto
+            para maiúsculas. Se False, aplica title case (primeira letra
+            maiúscula em cada palavra). Padrão: False.
+
+    Returns:
+        str: Texto formatado com espaços normalizados e capitalização aplicada.
+
+    Examples:
+        >>> formatar_texto("  joão  silva  ")
+        'João Silva'
+        >>> formatar_texto("são paulo", maiusculo_estado=True)
+        'SÃO PAULO'
+        >>> formatar_texto("escola MUNICIPAL")
+        'Escola Municipal'
+
+    Note:
+        - Espaços múltiplos são reduzidos a um único espaço
+        - Espaços no início e fim são removidos
+        - Acentuação é preservada
+    """
     texto = ' '.join(texto.strip().split())
     return texto.upper() if maiusculo_estado else ' '.join(w.capitalize() for w in texto.split())
 
 def normalizar_texto_base(texto):
+    """
+    Normaliza texto para comparação, removendo acentos e formatação.
+
+    Esta função é utilizada para comparar textos de forma mais flexível,
+    removendo diferenças de acentuação, espaços extras e maiúsculas/minúsculas.
+    Útil para reconhecimento de colunas e matching de aliases.
+
+    Args:
+        texto (str): Texto a ser normalizado.
+
+    Returns:
+        str: Texto normalizado (minúsculas, sem acentos, espaços únicos).
+            Retorna string vazia se o texto for None ou vazio.
+
+    Examples:
+        >>> normalizar_texto_base("Função do Aluno")
+        'funcao do aluno'
+        >>> normalizar_texto_base("  LANÇAMENTOS   VÁLIDOS  ")
+        'lancamentos validos'
+        >>> normalizar_texto_base("São José")
+        'sao jose'
+        >>> normalizar_texto_base("")
+        ''
+
+    Note:
+        - Remove todos os acentos usando decomposição Unicode (NFKD)
+        - Converte para minúsculas
+        - Normaliza múltiplos espaços para um único espaço
+        - Remove espaços no início e fim
+    """
     if not texto:
         return ""
     texto = unicodedata.normalize("NFKD", str(texto))
@@ -37,11 +96,107 @@ def normalizar_texto_base(texto):
     return texto.lower()
 
 def sanitizar_nome_arquivo(nome):
+    """
+    Remove caracteres inválidos de nomes de arquivo.
+
+    Esta função sanitiza nomes de arquivos removendo caracteres que não são
+    permitidos em sistemas de arquivos Windows/Linux/macOS, garantindo que
+    o arquivo possa ser salvo corretamente.
+
+    Args:
+        nome (str): Nome de arquivo a ser sanitizado. Pode ser None ou vazio.
+
+    Returns:
+        str: Nome de arquivo sanitizado, ou "Apresentacao_Final_Equipes" se
+            o nome for inválido/vazio.
+
+    Examples:
+        >>> sanitizar_nome_arquivo("Apresentação: Final 2024")
+        'Apresentação Final 2024'
+        >>> sanitizar_nome_arquivo("dados<teste>arquivo")
+        'dadostestarquivo'
+        >>> sanitizar_nome_arquivo("")
+        'Apresentacao_Final_Equipes'
+        >>> sanitizar_nome_arquivo(None)
+        'Apresentacao_Final_Equipes'
+
+    Note:
+        - Remove caracteres: \\ / : * ? " < > |
+        - Preserva espaços, letras, números e outros caracteres válidos
+        - Retorna nome padrão se resultado for vazio
+        - Remove espaços no início e fim
+    """
     nome = (nome or "").strip()
     nome = re.sub(r'[\\/:*?"<>|]', "", nome)
     return nome or "Apresentacao_Final_Equipes"
 
 def extrair_dados(uploaded_file):
+    """
+    Extrai dados de equipes de um arquivo DOCX.
+
+    Esta é a função principal de extração de dados. Processa todas as tabelas
+    no documento DOCX, reconhece colunas automaticamente usando aliases e
+    palavras-chave, agrupa participantes por equipe, ordena equipes por
+    desempenho e formata os dados para geração de slides.
+
+    Args:
+        uploaded_file: Objeto de arquivo DOCX (file-like object) enviado
+            pelo Streamlit. Deve conter tabelas com dados de equipes.
+
+    Returns:
+        list[dict]: Lista de dicionários, um para cada equipe, ordenada por
+            alcance (crescente). Cada dicionário contém:
+            - "{{LANCAMENTOS_VALIDOS}}": str - "ALCANCE: XX.X m"
+            - "{{NOME_EQUIPE}}": str - "Equipe: XX"
+            - "{{NOME_ESCOLA}}": str - Nome da escola formatado
+            - "{{CIDADE_UF}}": str - "Cidade / UF"
+            - "{{NOMES_ALUNOS}}": str - Nomes separados por \\n
+
+    Examples:
+        >>> dados = extrair_dados(docx_file)
+        >>> print(len(dados))
+        3
+        >>> print(dados[0])
+        {
+            "{{LANCAMENTOS_VALIDOS}}": "ALCANCE: 45.5 m",
+            "{{NOME_EQUIPE}}": "Equipe: 01",
+            "{{NOME_ESCOLA}}": "Colégio Estadual Xyz",
+            "{{CIDADE_UF}}": "Campinas / SP",
+            "{{NOMES_ALUNOS}}": "João Silva\\nMaria Santos\\nAna Costa"
+        }
+
+    Reconhecimento de Colunas:
+        A função reconhece as seguintes colunas usando múltiplos aliases:
+        - Válido/Alcance: "valido", "alcance", "lancamentos validos", etc.
+        - Equipe: "equipe", "nome da equipe"
+        - Nome: "nome", "integrante", "participante", "aluno", etc.
+        - Função: "funcao", "papel", "cargo", etc.
+        - Escola: "escola", "instituicao", "colegio", etc.
+        - Cidade: "cidade", "municipio"
+        - Estado: "estado", "uf"
+
+    Processamento:
+        1. Lê todas as tabelas do DOCX
+        2. Identifica colunas usando três estratégias:
+           - Correspondência exata com aliases
+           - Busca por palavras-chave em tokens
+           - Substring matching
+        3. Extrai registros linha por linha
+        4. Agrupa registros por equipe
+        5. Ordena equipes por alcance (menor para maior)
+        6. Dentro de cada equipe:
+           - Líder aparece primeiro
+           - Acompanhante em segundo
+           - Alunos em ordem alfabética (normalizada)
+        7. Formata dados para substituição nos slides
+
+    Note:
+        - Linhas vazias são ignoradas
+        - Linhas sem equipe E sem nome são ignoradas
+        - Equipes com alcance inválido vão para o final (ordenação = inf)
+        - Normalização de texto é aplicada para ordenação alfabética
+        - Todos os membros da mesma equipe devem ter o mesmo alcance
+    """
     doc = Document(uploaded_file)
     registros = []
     for tabela in doc.tables:
@@ -257,6 +412,47 @@ def extrair_dados(uploaded_file):
 
 # -------------------- DUPLICAÇÃO DE SLIDE --------------------
 def duplicate_slide_with_media(prs, source_slide):
+    """
+    Duplica um slide preservando imagens e elementos visuais.
+
+    Esta função cria uma cópia completa de um slide, incluindo todos os
+    elementos visuais, formas, imagens e seus dados binários. É essencial
+    para manter a formatação e design do template ao gerar múltiplos slides.
+
+    Args:
+        prs (Presentation): Objeto de apresentação python-pptx onde o novo
+            slide será adicionado.
+        source_slide (Slide): Slide original a ser duplicado.
+
+    Returns:
+        Slide: Novo slide criado, idêntico ao slide original incluindo
+            todas as imagens e elementos visuais.
+
+    Examples:
+        >>> prs = Presentation("template.pptx")
+        >>> slide_original = prs.slides[0]
+        >>> novo_slide = duplicate_slide_with_media(prs, slide_original)
+        >>> print(len(novo_slide.shapes))  # Mesmo número de elementos
+        5
+
+    Processamento:
+        1. Cria novo slide com o mesmo layout
+        2. Para cada shape (forma) no slide original:
+           - Cria cópia profunda do elemento XML
+           - Se for imagem (shape_type == 13):
+             * Extrai dados binários da imagem
+             * Adiciona imagem ao novo slide
+             * Atualiza referências XML (relationship ID)
+           - Insere elemento no novo slide
+
+    Note:
+        - Preserva todas as propriedades visuais (cores, fontes, posições)
+        - Imagens são copiadas com seus dados binários completos
+        - Relacionamentos XML são atualizados corretamente
+        - Funciona com imagens PNG, JPG e outros formatos
+        - Mantém a ordem z-index dos elementos
+        - Trata erros de imagens corrompidas gracefully
+    """
     layout = source_slide.slide_layout
     new_slide = prs.slides.add_slide(layout)
     for shape in source_slide.shapes:
@@ -279,6 +475,62 @@ def duplicate_slide_with_media(prs, source_slide):
 
 # -------------------- SUBSTITUIÇÃO DE PLACEHOLDERS --------------------
 def replace_placeholders_in_shape(shape, team_data):
+    """
+    Substitui placeholders em uma forma do slide com dados da equipe.
+
+    Esta função procura por placeholders (ex: {{NOME_EQUIPE}}) em caixas de
+    texto do slide e os substitui pelos dados reais da equipe, aplicando
+    formatação específica para cada tipo de informação.
+
+    Args:
+        shape: Objeto Shape do python-pptx (forma do PowerPoint).
+        team_data (dict): Dicionário com dados da equipe contendo as chaves:
+            - "{{LANCAMENTOS_VALIDOS}}": Alcance formatado
+            - "{{NOME_EQUIPE}}": Nome da equipe
+            - "{{NOME_ESCOLA}}": Nome da escola
+            - "{{CIDADE_UF}}": Cidade e estado
+            - "{{NOMES_ALUNOS}}": Nomes dos participantes
+
+    Returns:
+        None: A função modifica o shape in-place.
+
+    Formatação Aplicada por Placeholder:
+        - {{LANCAMENTOS_VALIDOS}}:
+          * "ALCANCE: " → Lexend, 28pt, azul (#006FC0)
+          * Valor → Lexend, 35pt, azul, negrito + sublinhado
+
+        - {{NOMES_ALUNOS}}:
+          * Lexend, 26.5pt, branco (#FFFFFF), negrito
+          * Um nome por linha, centralizado
+
+        - {{NOME_EQUIPE}}:
+          * Lexend, 20pt, branco, negrito, centralizado
+
+        - {{NOME_ESCOLA}} e {{CIDADE_UF}}:
+          * Lexend, 20pt, branco, negrito, centralizado
+          * Se ambos na mesma caixa, cria parágrafos separados
+
+    Examples:
+        >>> # shape é uma caixa de texto com "{{NOME_EQUIPE}}"
+        >>> team_data = {"{{NOME_EQUIPE}}": "Equipe: 01"}
+        >>> replace_placeholders_in_shape(shape, team_data)
+        >>> # shape agora contém "Equipe: 01" formatado
+
+    Casos Especiais:
+        - {{NOMES_ALUNOS}} + {{NOME_EQUIPE}} na mesma caixa:
+          * Tratados juntos com formatações diferentes
+        - {{NOME_ESCOLA}} + {{CIDADE_UF}} na mesma caixa:
+          * Criados em parágrafos separados
+        - Placeholders colados (ex: }}{{):
+          * Separados automaticamente com quebra de linha
+
+    Note:
+        - Ignora shapes sem text_frame
+        - Remove todos os runs antigos antes de criar novos
+        - Alinhamento centralizado aplicado automaticamente
+        - Fonte Lexend aplicada em todos os textos
+        - Cores em RGB: azul = #006FC0, branco = #FFFFFF
+    """
     if not shape.has_text_frame:
         return
 
@@ -399,6 +651,58 @@ def replace_placeholders_in_shape(shape, team_data):
 
 # -------------------- GERAÇÃO FINAL --------------------
 def gerar_apresentacao(dados, template_stream):
+    """
+    Gera apresentação completa com slides personalizados para cada equipe.
+
+    Esta é a função principal de geração. Recebe dados extraídos do DOCX
+    e um template PPTX, duplica o slide modelo para cada equipe e substitui
+    os placeholders com os dados correspondentes.
+
+    Args:
+        dados (list[dict]): Lista de dicionários com dados das equipes,
+            retornada pela função extrair_dados(). Cada dicionário deve
+            conter as chaves dos placeholders.
+        template_stream: Stream do arquivo PPTX template (file-like object)
+            enviado pelo Streamlit.
+
+    Returns:
+        Presentation: Objeto de apresentação python-pptx completo, pronto
+            para ser salvo. Contém um slide para cada equipe nos dados.
+
+    Examples:
+        >>> dados = extrair_dados(docx_file)
+        >>> prs = gerar_apresentacao(dados, pptx_template)
+        >>> print(len(prs.slides))
+        10  # 10 equipes = 10 slides
+        >>> # Salvar apresentação
+        >>> prs.save("output.pptx")
+
+    Processamento:
+        1. Carrega template PPTX
+        2. Valida entrada (dados não vazios, template tem slides)
+        3. Usa primeiro slide como modelo
+        4. Duplica o slide modelo (n-1) vezes (preservando mídia)
+        5. Para cada slide:
+           - Associa com dados de uma equipe
+           - Percorre todos os shapes
+           - Substitui placeholders encontrados
+
+    Estrutura do Template:
+        O template deve ter pelo menos 1 slide contendo placeholders:
+        - {{LANCAMENTOS_VALIDOS}}
+        - {{NOME_EQUIPE}}
+        - {{NOME_ESCOLA}}
+        - {{CIDADE_UF}}
+        - {{NOMES_ALUNOS}}
+
+    Note:
+        - Se dados estiver vazio, retorna apresentação original
+        - Se template não tiver slides, retorna apresentação original
+        - Primeiro slide do template é usado como modelo
+        - Imagens e elementos visuais são preservados na duplicação
+        - Ordem dos slides corresponde à ordem dos dados (por alcance)
+        - Não modifica o template original, apenas gera novos slides
+    """
     prs = Presentation(template_stream)
     if not dados or not prs.slides:
         return prs
