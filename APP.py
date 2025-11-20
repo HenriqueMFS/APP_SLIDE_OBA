@@ -426,7 +426,7 @@ def _identificar_colunas_tabela(cabecalho):
     coluna_por_campo = {}  # Resultado: {campo: índice_coluna}
     colunas_usadas = set()  # Garante que cada coluna seja usada apenas uma vez
 
-    def registrar(campo, indice):
+    def _registrar_mapeamento_coluna(campo, indice):
         """
         Registra mapeamento campo → coluna se válido.
 
@@ -458,7 +458,7 @@ def _identificar_colunas_tabela(cabecalho):
             for idx, cab_norm in enumerate(header_norm):
                 if idx in colunas_usadas:
                     continue
-                if cab_norm == alias_norm and registrar(campo, idx):
+                if cab_norm == alias_norm and _registrar_mapeamento_coluna(campo, idx):
                     break
             if campo in coluna_por_campo:
                 break
@@ -475,7 +475,7 @@ def _identificar_colunas_tabela(cabecalho):
     # 3. Nome (campo mais genérico, vem por último)
     prioridade_campos = ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
 
-    def combina(campo, tokens, cab_norm):
+    def _verifica_combinacao_fuzzy(campo, tokens, cab_norm):
         """
         Verifica se um cabeçalho combina com um campo usando fuzzy matching.
 
@@ -522,8 +522,8 @@ def _identificar_colunas_tabela(cabecalho):
         for idx, tokens in enumerate(tokens_por_coluna):
             if idx in colunas_usadas:
                 continue
-            if combina(campo, tokens, header_norm[idx]):
-                registrar(campo, idx)
+            if _verifica_combinacao_fuzzy(campo, tokens, header_norm[idx]):
+                _registrar_mapeamento_coluna(campo, idx)
                 break
 
     return coluna_por_campo
@@ -611,7 +611,7 @@ def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
 
     registros = []
 
-    def obter_valor(linha_celulas, chave):
+    def _extrair_valor_celula(linha_celulas, chave):
         """Obtém valor de uma célula com validação de índice"""
         if not linha_celulas:
             return ""
@@ -627,7 +627,7 @@ def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
         if not any(c.strip() for c in celulas):
             continue
 
-        registro = {chave: obter_valor(celulas, chave) for chave in campos_esperados}
+        registro = {chave: _extrair_valor_celula(celulas, chave) for chave in campos_esperados}
 
         # Ignora registros sem equipe e sem nome
         if not registro["Equipe"] and not registro["Nome"]:
@@ -772,7 +772,7 @@ def _organizar_dados_equipes(registros):
     #
     # Tratamento de erros robusto: equipes sem alcance válido vão para o final
     # (float("inf") garante que sejam as últimas na ordenação).
-    def chave_ord(membros):
+    def _extrair_chave_ordenacao_alcance(membros):
         """
         Extrai chave de ordenação: alcance do foguete.
 
@@ -802,7 +802,7 @@ def _organizar_dados_equipes(registros):
             # Qualquer erro: equipe vai pro final da lista
             return float("inf")
 
-    equipes_ordenadas = sorted(equipes.items(), key=lambda x: chave_ord(x[1]))
+    equipes_ordenadas = sorted(equipes.items(), key=lambda x: _extrair_chave_ordenacao_alcance(x[1]))
 
     # ==================== FORMATAÇÃO DOS DADOS POR EQUIPE ====================
     dados_finais = []
