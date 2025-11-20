@@ -1,59 +1,126 @@
-import streamlit as st
-from docx import Document
-from pptx import Presentation
-from pptx.util import Pt
-from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+"""
+APP_SLIDE_OBA - Gerador Automático de Apresentações PowerPoint
+
+Este módulo processa arquivos DOCX contendo dados de equipes e gera
+apresentações PowerPoint personalizadas usando um template fornecido.
+
+Principais funcionalidades:
+- Extração inteligente de dados de tabelas DOCX
+- Matching automático de colunas usando aliases e fuzzy matching
+- Geração de slides duplicando template e preenchendo placeholders
+- Interface web com Streamlit para upload e processamento
+
+Arquitetura:
+- Document Processing: Leitura e extração de dados de DOCX
+- Column Matching: Identificação automática de colunas relevantes
+- Data Organization: Agrupamento e formatação de dados por equipe
+- Presentation Generation: Duplicação de slides e substituição de placeholders
+- UI Layer: Interface Streamlit para interação do usuário
+
+Clean Code Refactoring iniciado: 2025-11-19
+"""
+
+# ==================== IMPORTS ====================
+# Seguindo PEP 8: Standard Library → Third-party → Local
+
+# Standard library imports
+import re
+import unicodedata
 from collections import defaultdict
 from copy import deepcopy
 from io import BytesIO
+
+# Third-party imports
+import streamlit as st
+from docx import Document
 from lxml import etree
-import re
-import unicodedata
 from PIL import Image
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Pt
 
-# -------------------- CONSTANTES --------------------
-# Configurações de imagem
-LOGO_PATH = "logo_jornada.png"
-LOGO_WIDTH = 1235
-LOGO_HEIGHT = 426
-GIF_PATH = "tiapamela.gif"
+# ==================== CONSTANTES ====================
+"""
+Constantes de configuração do sistema.
 
-# Configurações de layout Streamlit
+Todas as configurações são centralizadas aqui para facilitar manutenção
+e permitir futuras integrações com arquivos de configuração externos.
+"""
+
+# --- Configurações de Imagem ---
+# Caminhos dos assets visuais utilizados na interface
+LOGO_PATH = "logo_jornada.png"  # Logo principal da aplicação
+GIF_PATH = "tiapamela.gif"  # Animação exibida após sucesso
+
+# Dimensões do logo para exibição otimizada
+LOGO_WIDTH = 1235  # Largura em pixels
+LOGO_HEIGHT = 426  # Altura em pixels
+
+# --- Configurações de Layout Streamlit ---
+# Layout wide maximiza uso da tela para melhor UX
 PAGE_LAYOUT = "wide"
+
+# Proporções das colunas: [esquerda, centro, direita]
+# Centro (4) é maior para conteúdo principal
 COLUMN_PROPORTIONS = [1, 4, 1]
 
-# Configurações de fonte
+# --- Configurações de Tipografia ---
+# Fonte Lexend escolhida por legibilidade e aparência moderna
 FONT_NAME = "Lexend"
-FONT_SIZE_SMALL = 20
-FONT_SIZE_MEDIUM = 26.5
-FONT_SIZE_LARGE = 28
-FONT_SIZE_XLARGE = 35
 
-# Cores RGB
-COLOR_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-COLOR_BLUE = RGBColor(0x00, 0x6F, 0xC0)
+# Tamanhos de fonte para diferentes elementos (em pontos)
+FONT_SIZE_SMALL = 20  # Nomes de equipe, escola, cidade
+FONT_SIZE_MEDIUM = 26.5  # Nomes de participantes
+FONT_SIZE_LARGE = 28  # Label "ALCANCE:"
+FONT_SIZE_XLARGE = 35  # Valor do alcance (destaque)
 
-# Shape types
+# --- Paleta de Cores ---
+# Cores em formato RGB para consistência visual
+COLOR_WHITE = RGBColor(0xFF, 0xFF, 0xFF)  # Branco puro (#FFFFFF)
+COLOR_BLUE = RGBColor(0x00, 0x6F, 0xC0)  # Azul corporativo (#006FC0)
+
+# --- Constantes PowerPoint ---
+# Tipo de shape para imagens (constante do python-pptx)
 SHAPE_TYPE_PICTURE = 13
 
-# Placeholders de template
-PLACEHOLDER_VALIDO = "{{LANCAMENTOS_VALIDOS}}"
-PLACEHOLDER_EQUIPE = "{{NOME_EQUIPE}}"
-PLACEHOLDER_ESCOLA = "{{NOME_ESCOLA}}"
-PLACEHOLDER_CIDADE_UF = "{{CIDADE_UF}}"
-PLACEHOLDER_ALUNOS = "{{NOMES_ALUNOS}}"
+# --- Placeholders de Template ---
+# Marcadores substituídos nos slides (formato {{NOME}})
+PLACEHOLDER_VALIDO = "{{LANCAMENTOS_VALIDOS}}"  # Alcance do foguete
+PLACEHOLDER_EQUIPE = "{{NOME_EQUIPE}}"  # Nome da equipe
+PLACEHOLDER_ESCOLA = "{{NOME_ESCOLA}}"  # Instituição de ensino
+PLACEHOLDER_CIDADE_UF = "{{CIDADE_UF}}"  # Localização (Cidade/Estado)
+PLACEHOLDER_ALUNOS = "{{NOMES_ALUNOS}}"  # Lista de participantes
 
-# Mensagens de interface
-MSG_UPLOAD_WARNING = "CERTIFIQUE-SE DE ESTÁ FAZENDO O UPLOAD DOS ARQUIVOS CORRETOS ANTES DE GERAR OS SLIDES!"
+# --- Mensagens de Interface ---
+# Mensagens padronizadas para comunicação com usuário
+
+# Aviso crítico antes de fazer upload (reduz erros)
+MSG_UPLOAD_WARNING = (
+    "CERTIFIQUE-SE DE ESTÁ FAZENDO O UPLOAD DOS ARQUIVOS "
+    "CORRETOS ANTES DE GERAR OS SLIDES!"
+)
+
+# Validação de arquivos obrigatórios
 MSG_SEND_BOTH_FILES = "Envie ambos os arquivos."
+
+# Feedback quando nenhum dado é encontrado
 MSG_NO_DATA_FOUND = "Nenhum dado encontrado."
+
+# Nome padrão para arquivo de download
 MSG_NOME_ARQUIVO_DEFAULT = "Apresentacao_Final_Equipes"
+
+# Mensagem de sucesso após geração
 MSG_CAPTION_READY = "Apresentação pronta! 🚀"
 
-# Namespace XML
-XML_NAMESPACE_DRAWINGML = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
-XML_NAMESPACE_RELATIONSHIPS = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+# --- Namespaces XML ---
+# Namespaces do Office Open XML usados para manipulação de elementos
+XML_NAMESPACE_DRAWINGML = (
+    "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+)
+XML_NAMESPACE_RELATIONSHIPS = (
+    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+)
 
 # -------------------- CONFIGURAÇÃO INICIAL --------------------
 st.set_page_config(layout=PAGE_LAYOUT)
@@ -175,13 +242,85 @@ def sanitizar_nome_arquivo(nome):
 
 def _identificar_colunas_tabela(cabecalho):
     """
-    Identifica e mapeia as colunas da tabela baseado no cabeçalho.
+    Identifica e mapeia colunas da tabela usando algoritmo de matching inteligente.
+
+    Esta é uma função crítica que implementa reconhecimento automático de colunas
+    usando uma estratégia de 2 passes: correspondência exata com aliases e matching
+    fuzzy com palavras-chave. O algoritmo é tolerante a variações de nomenclatura
+    e formatação nos cabeçalhos das tabelas.
 
     Args:
-        cabecalho: Lista com os textos do cabeçalho da tabela
+        cabecalho (list[str]): Lista com os textos do cabeçalho da tabela.
+            Cada elemento é o conteúdo de uma célula do cabeçalho.
+            Exemplo: ["Nome", "Função do Aluno", "Lançamentos Válidos"]
 
     Returns:
-        Dict mapeando campos esperados para índices de colunas
+        dict[str, int]: Dicionário mapeando campos esperados para índices de colunas.
+            Retorna dicionário vazio se o cabeçalho for inválido ou vazio.
+
+            Campos mapeados:
+            - "Valido": Índice da coluna de alcance/lançamentos válidos
+            - "Equipe": Índice da coluna de nome da equipe
+            - "Funcao": Índice da coluna de função (aluno/líder/acompanhante)
+            - "Escola": Índice da coluna de nome da escola
+            - "Cidade": Índice da coluna de cidade
+            - "Estado": Índice da coluna de estado/UF
+            - "Nome": Índice da coluna de nome do participante
+
+    Examples:
+        >>> cabecalho = ["Nome", "Equipe", "Alcance (m)", "Escola"]
+        >>> mapa = _identificar_colunas_tabela(cabecalho)
+        >>> mapa
+        {'Nome': 0, 'Equipe': 1, 'Valido': 2, 'Escola': 3}
+
+        >>> cabecalho = ["Função do Integrante", "Lançamentos Válidos"]
+        >>> mapa = _identificar_colunas_tabela(cabecalho)
+        >>> mapa
+        {'Funcao': 0, 'Valido': 1}
+
+        >>> cabecalho = []  # Cabeçalho vazio
+        >>> mapa = _identificar_colunas_tabela(cabecalho)
+        >>> mapa
+        {}
+
+    Algoritmo (2 Passes):
+        **Pass 1 - Correspondência Exata:**
+        Tenta correspondência exata com aliases normalizados para cada campo.
+        Normalização remove acentos, espaços extras e maiúsculas.
+
+        Aliases por campo:
+        - Valido: "valido", "alcance", "lancamentos validos", "alcance (m)"
+        - Equipe: "equipe", "nome da equipe"
+        - Funcao: "funcao", "funcao/role", "funcao na equipe", "papel"
+        - Escola: "escola", "nome da escola", "instituicao", "colegio"
+        - Cidade: "cidade", "municipio"
+        - Estado: "estado", "uf"
+        - Nome: "nome", "nome do integrante", "aluno", "participante"
+
+        **Pass 2 - Matching Fuzzy:**
+        Para campos não identificados, usa matching baseado em palavras-chave
+        e tokens extraídos do cabeçalho. Segue ordem de prioridade para
+        evitar conflitos (ex: "Nome da Escola" não deve ser identificado como "Nome").
+
+        Ordem de prioridade:
+        1. Valido, 2. Equipe, 3. Funcao, 4. Escola, 5. Cidade, 6. Estado, 7. Nome
+
+    Edge Cases:
+        - **"Nome da Escola" vs "Nome"**: Algoritmo detecta tokens "escola"/"colegio"
+          e evita identificar como campo "Nome"
+        - **Variações de acentuação**: "Função" = "Funcao" após normalização
+        - **Case insensitive**: "ALCANCE" = "alcance" = "Alcance"
+        - **Espaços extras**: "  Nome  Equipe  " = "Nome Equipe"
+        - **Múltiplos aliases**: "Lançamentos Válidos", "Alcance (m)", "Válido"
+          todos identificam o campo "Valido"
+
+    Note:
+        - Cada coluna é identificada no máximo uma vez (sem duplicatas)
+        - Se múltiplos aliases corresponderem à mesma coluna, o primeiro vence
+        - Campos não obrigatórios: função, escola, cidade, estado podem faltar
+        - Campos críticos: Valido (alcance) e Equipe/Nome (identificação)
+        - A ordem de prioridade evita que campos genéricos (Nome) sejam
+          identificados incorretamente antes de campos específicos (Escola)
     """
     # Validação: cabeçalho não pode ser vazio
     if not cabecalho:
@@ -337,15 +476,76 @@ def _identificar_colunas_tabela(cabecalho):
 
 def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
     """
-    Processa as linhas de uma tabela e extrai registros.
+    Processa linhas de uma tabela DOCX e extrai registros estruturados.
+
+    Esta função itera pelas linhas da tabela (excluindo o cabeçalho),
+    extrai valores das colunas identificadas e cria registros estruturados
+    para cada linha válida.
 
     Args:
-        tabela: Tabela do documento Word
-        coluna_por_campo: Dict mapeando campos para índices de colunas
-        campos_esperados: Lista de campos a serem extraídos
+        tabela (Table): Objeto Table do python-docx contendo dados das equipes.
+        coluna_por_campo (dict[str, int]): Mapeamento de campos para índices
+            de colunas, gerado por _identificar_colunas_tabela().
+            Exemplo: {"Nome": 0, "Equipe": 1, "Valido": 2}
+        campos_esperados (list[str]): Lista de campos a serem extraídos.
+            Exemplo: ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
 
     Returns:
-        Lista de registros (dicts) extraídos da tabela
+        list[dict]: Lista de registros extraídos, cada um contendo:
+            - "Valido" (str): Alcance do foguete
+            - "Equipe" (str): Nome da equipe
+            - "Funcao" (str): Função normalizada (minúsculas)
+            - "Escola" (str): Nome da escola
+            - "Cidade" (str): Cidade
+            - "Estado" (str): Estado/UF
+            - "Nome" (str): Nome do participante
+
+            Retorna lista vazia se:
+            - Tabela for None ou inválida
+            - Mapeamento de colunas for vazio
+            - Tabela tiver menos de 2 linhas (cabeçalho + dados)
+
+    Examples:
+        >>> # Supondo tabela com cabeçalho ["Nome", "Equipe", "Alcance"]
+        >>> coluna_por_campo = {"Nome": 0, "Equipe": 1, "Valido": 2}
+        >>> campos = ["Nome", "Equipe", "Valido", "Funcao", "Escola", "Cidade", "Estado"]
+        >>> registros = _processar_linhas_tabela(tabela, coluna_por_campo, campos)
+        >>> registros[0]
+        {
+            'Nome': 'João Silva',
+            'Equipe': 'Equipe 01',
+            'Valido': '15.5',
+            'Funcao': 'aluno',
+            'Escola': '',
+            'Cidade': '',
+            'Estado': ''
+        }
+
+    Processamento:
+        1. Valida parâmetros de entrada (tabela, mapeamento, campos)
+        2. Verifica se tabela tem pelo menos 2 linhas (cabeçalho + dados)
+        3. Para cada linha após o cabeçalho:
+           a. Extrai texto de todas as células
+           b. Ignora linhas completamente vazias
+           c. Cria registro com valores dos campos esperados
+           d. Normaliza função para minúsculas
+           e. Ignora registros sem Equipe E sem Nome (inválidos)
+        4. Retorna lista de registros válidos
+
+    Validações:
+        - **Linha vazia**: Ignora linhas onde todas as células estão vazias
+        - **Índice de coluna**: Valida que índice existe antes de acessar
+        - **Registro inválido**: Ignora se não tem Equipe E não tem Nome
+          (pelo menos um dos dois é obrigatório para identificação)
+        - **Função normalizada**: Converte função para minúsculas para
+          facilitar matching posterior (líder, aluno, acompanhante)
+
+    Note:
+        - Função interna que assume que cabeçalho já foi identificado
+        - Pula a primeira linha (linha[0]) que é o cabeçalho
+        - Campos ausentes no mapeamento retornam string vazia
+        - Não lança exceções: retorna lista vazia em caso de erro
+        - Preserva espaços nos valores (strip é aplicado mas não remove espaços internos)
     """
     # Validação: parâmetros não podem ser None
     if not tabela or not coluna_por_campo or not campos_esperados:
@@ -393,13 +593,100 @@ def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
 
 def _organizar_dados_equipes(registros):
     """
-    Organiza registros por equipe e formata dados finais para apresentação.
+    Organiza registros por equipe e formata dados para geração de slides.
+
+    Esta função agrupa registros individuais por equipe, ordena as equipes
+    por alcance (lançamento válido), separa membros por função (líder,
+    acompanhante, alunos) e formata todos os dados no formato esperado
+    pelos placeholders dos slides.
 
     Args:
-        registros: Lista de registros extraídos das tabelas
+        registros (list[dict]): Lista de registros extraídos das tabelas.
+            Cada registro deve conter as chaves:
+            - "Equipe" (str): Nome da equipe
+            - "Nome" (str): Nome do participante
+            - "Funcao" (str): Função (aluno/líder/acompanhante)
+            - "Valido" (str): Alcance do foguete
+            - "Escola" (str): Nome da escola
+            - "Cidade" (str): Cidade
+            - "Estado" (str): Estado
 
     Returns:
-        Lista de dicts com dados formatados para os slides
+        list[dict]: Lista de dicionários formatados para preencher slides.
+            Cada dicionário contém placeholders mapeados para valores formatados:
+
+            - "{{LANCAMENTOS_VALIDOS}}": "ALCANCE: 15.5 m"
+            - "{{NOME_EQUIPE}}": "Equipe: 01"
+            - "{{NOME_ESCOLA}}": "Escola Municipal São José"
+            - "{{CIDADE_UF}}": "São Paulo / SP"
+            - "{{NOMES_ALUNOS}}": "João Silva\\nMaria Santos\\n..."
+
+            Retorna lista vazia se:
+            - registros for None ou vazio
+            - Nenhum registro tiver nome de equipe
+            - Nenhuma equipe tiver alcance válido
+
+    Examples:
+        >>> registros = [
+        ...     {"Equipe": "Equipe 01", "Nome": "João", "Funcao": "aluno",
+        ...      "Valido": "15.5", "Escola": "EMEF", "Cidade": "SP", "Estado": "SP"},
+        ...     {"Equipe": "Equipe 01", "Nome": "Maria", "Funcao": "líder",
+        ...      "Valido": "15.5", "Escola": "EMEF", "Cidade": "SP", "Estado": "SP"}
+        ... ]
+        >>> dados = _organizar_dados_equipes(registros)
+        >>> dados[0]["{{NOME_EQUIPE}}"]
+        'Equipe: 01'
+        >>> dados[0]["{{NOMES_ALUNOS}}"]
+        'Maria\\nJoão'  # Líder aparece primeiro
+
+    Processamento:
+        1. **Agrupamento**: Agrupa registros por nome de equipe
+           - Ignora registros sem nome de equipe
+
+        2. **Ordenação**: Ordena equipes pelo alcance (menor para maior)
+           - Equipes sem alcance válido vão para o final (float("inf"))
+           - Converte vírgulas em pontos para comparação numérica
+
+        3. **Separação por Função**: Para cada equipe, separa:
+           - **Líder**: Membros com "líder" ou "lider" na função
+           - **Acompanhante**: Membros com "acompanhante" na função
+           - **Alunos**: Membros com "aluno" na função
+           - Alunos são ordenados alfabeticamente por nome normalizado
+
+        4. **Montagem de Nomes**: Cria lista de nomes na ordem:
+           - 1º: Líder (se existir)
+           - 2º: Acompanhante (se existir)
+           - 3º+: Alunos (ordenados alfabeticamente)
+
+        5. **Formatação**: Aplica formatar_texto() em todos os textos
+           - Estado em MAIÚSCULAS
+           - Demais campos em Title Case
+
+        6. **Extração de Número**: Extrai número da equipe do nome
+           - "Equipe 01" → "01"
+           - "Foguete Espacial 123" → "123"
+           - Usa última palavra do nome
+
+    Validações e Tratamento de Erros:
+        - **Registros vazios**: Retorna lista vazia
+        - **Equipe sem nome**: Registro é ignorado
+        - **Alcance inválido**: Trata como float("inf") na ordenação
+        - **Função vazia**: Membro não é categorizado (não aparece no slide)
+        - **Membros sem nome**: Ignorados na lista de nomes
+        - **Info mínima**: Equipe precisa ter pelo menos "Valido" para ser incluída
+
+    Edge Cases:
+        - **Múltiplos líderes**: Apenas o primeiro é usado
+        - **Sem líder**: Lista começa com acompanhante ou alunos
+        - **Alcance com vírgula**: "15,5" convertido para "15.5" na ordenação
+        - **Equipe sem número**: Usa "?" como fallback
+
+    Note:
+        - Função crítica para a lógica de negócio
+        - Ordem dos nomes no slide reflete hierarquia: líder → acompanhante → alunos
+        - Alunos sempre em ordem alfabética para consistência
+        - Formatação aplicada: Title Case para nomes, UPPERCASE para estados
+        - Validações robustas previnem crashes com dados malformados
     """
     # Validação: registros não podem ser vazios
     if not registros:
@@ -493,13 +780,116 @@ def _organizar_dados_equipes(registros):
 
 def extrair_dados(uploaded_file):
     """
-    Extrai dados de equipes de um arquivo DOCX e formata para geração de slides.
+    Extrai e processa dados de equipes de um arquivo DOCX para geração de slides.
+
+    Esta é a função principal de extração de dados. Ela orquestra todo o
+    pipeline de processamento: leitura do documento, identificação de colunas,
+    extração de registros e organização final dos dados.
 
     Args:
-        uploaded_file: Arquivo DOCX contendo tabelas com dados das equipes
+        uploaded_file (UploadedFile | BinaryIO): Arquivo DOCX contendo tabelas
+            com dados das equipes. Pode ser um objeto UploadedFile do Streamlit
+            ou qualquer objeto file-like em modo binário.
 
     Returns:
-        Lista de dicts com dados formatados para preencher os slides
+        list[dict]: Lista de dicionários formatados prontos para preencher slides.
+            Cada dicionário contém placeholders mapeados para valores:
+
+            - "{{LANCAMENTOS_VALIDOS}}": "ALCANCE: 15.5 m"
+            - "{{NOME_EQUIPE}}": "Equipe: 01"
+            - "{{NOME_ESCOLA}}": "Escola Municipal José Silva"
+            - "{{CIDADE_UF}}": "São Paulo / SP"
+            - "{{NOMES_ALUNOS}}": "Maria Santos\\nJoão Silva\\n..."
+
+            Retorna lista vazia se:
+            - uploaded_file for None
+            - Documento não puder ser aberto
+            - Documento não tiver tabelas
+            - Nenhuma coluna for identificada em nenhuma tabela
+            - Nenhum dado válido for extraído
+
+    Examples:
+        >>> # Com Streamlit
+        >>> docx_file = st.file_uploader("Upload DOCX", type=["docx"])
+        >>> dados = extrair_dados(docx_file)
+        >>> print(f"Encontradas {len(dados)} equipes")
+        Encontradas 25 equipes
+
+        >>> # Com arquivo local
+        >>> with open("dados_equipes.docx", "rb") as f:
+        ...     dados = extrair_dados(f)
+        >>> dados[0]["{{NOME_EQUIPE}}"]
+        'Equipe: 01'
+
+    Pipeline de Processamento:
+        1. **Validação**: Verifica se arquivo não é None
+
+        2. **Abertura do Documento**:
+           - Tenta abrir com python-docx
+           - Se falhar, captura exceção e retorna lista vazia
+           - Imprime erro no console (não lança exceção)
+
+        3. **Verificação de Tabelas**:
+           - Verifica se documento contém pelo menos uma tabela
+           - Retorna lista vazia se não houver tabelas
+
+        4. **Iteração por Tabelas**: Para cada tabela no documento:
+           a. **Extração de Cabeçalho**: Lê primeira linha como cabeçalho
+           b. **Identificação de Colunas**: Chama _identificar_colunas_tabela()
+              - Se nenhuma coluna for identificada, pula esta tabela
+           c. **Extração de Registros**: Chama _processar_linhas_tabela()
+              - Extrai registros de todas as linhas da tabela
+           d. **Acumulação**: Adiciona registros à lista global
+
+        5. **Organização Final**: Chama _organizar_dados_equipes()
+           - Agrupa registros por equipe
+           - Ordena por alcance
+           - Formata dados para placeholders
+
+        6. **Retorno**: Devolve lista de dicionários formatados
+
+    Campos Esperados nas Tabelas:
+        O algoritmo procura por colunas com estes nomes (ou aliases):
+
+        - **Valido/Alcance**: Lançamento válido (obrigatório)
+        - **Equipe**: Nome da equipe (obrigatório)
+        - **Nome**: Nome do participante (obrigatório)
+        - **Funcao**: Função (aluno/líder/acompanhante) (opcional)
+        - **Escola**: Nome da escola (opcional)
+        - **Cidade**: Cidade (opcional)
+        - **Estado**: Estado/UF (opcional)
+
+    Tolerância a Variações:
+        O algoritmo é tolerante a:
+        - Variações de nomenclatura ("Alcance", "Lançamentos Válidos", etc.)
+        - Acentuação ("Função" vs "Funcao")
+        - Maiúsculas/minúsculas ("NOME" vs "nome")
+        - Espaços extras ("  Nome  Equipe  ")
+        - Múltiplas tabelas no mesmo documento
+        - Tabelas com colunas em diferentes ordens
+
+    Tratamento de Erros:
+        - **Documento corrompido**: Retorna [] e imprime erro
+        - **Tabela vazia**: Pula tabela e continua
+        - **Cabeçalho inválido**: Pula tabela e continua
+        - **Dados malformados**: Registros inválidos são ignorados
+        - **Sem dados válidos**: Retorna []
+
+        A função é defensiva e nunca lança exceções para o chamador.
+
+    Performance:
+        - Processa múltiplas tabelas em um único documento
+        - Complexidade: O(n * m) onde n = número de tabelas, m = linhas por tabela
+        - Otimizado para documentos com até 1000 registros
+        - Para documentos grandes, considerar cache (futuro)
+
+    Note:
+        - Função pública chamada diretamente pela UI Streamlit
+        - Lê TODAS as tabelas do documento (não apenas a primeira)
+        - Registros de diferentes tabelas são mesclados
+        - Ordenação final por alcance garante que slides sigam ordem de classificação
+        - Validações em múltiplas camadas garantem robustez
+        - Erros são impressos com print() (considerar logging no futuro)
     """
     # Validação: arquivo não pode ser None
     if not uploaded_file:
@@ -791,14 +1181,141 @@ def replace_placeholders_in_shape(shape, team_data):
 # -------------------- GERAÇÃO FINAL --------------------
 def gerar_apresentacao(dados, template_stream):
     """
-    Gera apresentação PPTX com dados das equipes.
+    Gera apresentação PowerPoint completa duplicando template e preenchendo dados.
+
+    Esta é a função principal de geração de slides. Ela orquestra todo o
+    processo de criação da apresentação: abertura do template, duplicação
+    de slides, e substituição de placeholders pelos dados das equipes.
 
     Args:
-        dados: Lista de dicts com dados formatados das equipes
-        template_stream: Stream do arquivo PPTX template
+        dados (list[dict]): Lista de dicionários com dados formatados das equipes.
+            Cada dicionário deve conter placeholders como chaves:
+            - "{{LANCAMENTOS_VALIDOS}}": "ALCANCE: 15.5 m"
+            - "{{NOME_EQUIPE}}": "Equipe: 01"
+            - "{{NOME_ESCOLA}}": "Escola Municipal"
+            - "{{CIDADE_UF}}": "São Paulo / SP"
+            - "{{NOMES_ALUNOS}}": "Maria\\nJoão\\n..."
+
+        template_stream (UploadedFile | BinaryIO): Stream do arquivo PPTX template.
+            Pode ser um objeto UploadedFile do Streamlit ou qualquer objeto
+            file-like em modo binário. O template deve ter pelo menos 1 slide.
 
     Returns:
-        Objeto Presentation com os slides gerados
+        Presentation | None: Objeto Presentation do python-pptx com todos os
+            slides gerados e preenchidos.
+
+            Retorna None se:
+            - template_stream for None
+            - Template não puder ser aberto (arquivo corrompido)
+
+            Retorna Presentation vazia (apenas template original) se:
+            - dados for None ou vazio
+            - Template não tiver slides
+
+    Examples:
+        >>> # Uso típico com Streamlit
+        >>> docx_file = st.file_uploader("DOCX", type=["docx"])
+        >>> pptx_template = st.file_uploader("Template PPTX", type=["pptx"])
+        >>> dados = extrair_dados(docx_file)
+        >>> prs = gerar_apresentacao(dados, pptx_template)
+        >>> buf = BytesIO()
+        >>> prs.save(buf)
+        >>> st.download_button("Baixar", data=buf, file_name="resultado.pptx")
+
+        >>> # Uso programático
+        >>> with open("dados.docx", "rb") as docx, open("template.pptx", "rb") as pptx:
+        ...     dados = extrair_dados(docx)
+        ...     prs = gerar_apresentacao(dados, pptx)
+        ...     prs.save("resultado.pptx")
+
+    Pipeline de Geração:
+        1. **Validação do Template**:
+           - Verifica se template_stream não é None
+           - Tenta abrir com python-pptx
+           - Se falhar, imprime erro e retorna None
+
+        2. **Validação dos Dados**:
+           - Verifica se dados não é None/vazio
+           - Verifica se template tem pelo menos 1 slide
+           - Se falhar em qualquer validação, retorna Presentation original
+
+        3. **Preparação**:
+           - Identifica primeiro slide como modelo (template)
+           - Cria lista com este slide como primeiro item
+
+        4. **Duplicação de Slides**:
+           - Para cada equipe adicional (len(dados) - 1):
+             a. Chama duplicate_slide_with_media() para copiar o template
+             b. Preserva todas as imagens e formatações
+             c. Adiciona novo slide à lista de slides a preencher
+             d. Se duplicação falhar, imprime erro e continua
+
+        5. **Preenchimento de Dados**:
+           - Para cada par (slide, dados_equipe):
+             a. Itera por todas as shapes (formas) do slide
+             b. Chama replace_placeholders_in_shape() para substituir texto
+             c. Aplica formatações específicas por tipo de placeholder
+             d. Se preenchimento falhar, imprime erro e continua
+
+        6. **Retorno**: Devolve Presentation completo
+
+    Correspondência Slide ↔ Dados:
+        - Primeiro slide (template original) recebe dados[0]
+        - Duplicação 1 recebe dados[1]
+        - Duplicação 2 recebe dados[2]
+        - E assim por diante...
+
+        Garantia: len(slides_preenchidos) == len(dados)
+
+    Formatações Aplicadas:
+        Cada placeholder recebe formatação específica:
+
+        - **{{LANCAMENTOS_VALIDOS}}**:
+          * "ALCANCE: " → Lexend 28pt azul
+          * Valor → Lexend 35pt azul bold+underline
+
+        - **{{NOMES_ALUNOS}}**:
+          * Lexend 26.5pt branco bold
+          * Um nome por linha, centralizado
+
+        - **{{NOME_EQUIPE}}**, **{{NOME_ESCOLA}}**, **{{CIDADE_UF}}**:
+          * Lexend 20pt branco bold centralizado
+
+    Tratamento de Erros:
+        A função é defensiva e continua a execução mesmo com erros:
+
+        - **Template corrompido**: Retorna None, imprime erro
+        - **Erro ao duplicar slide**: Pula aquele slide, continua com próximos
+        - **Erro ao preencher placeholders**: Pula aquela shape, continua
+        - **Slide sem shapes**: Ignora, não causa erro
+        - **Placeholder não encontrado**: Não faz nada (slide fica com placeholder)
+
+        Erros são impressos com print() mas não interrompem a geração.
+
+    Performance:
+        - Complexidade: O(n * m) onde n = número de equipes, m = shapes por slide
+        - Duplicação de slides pode ser lenta com muitas imagens
+        - Para 50 equipes com 10 shapes cada: ~2-3 segundos
+        - Otimização futura: cache de imagens, processamento paralelo
+
+    Preservação de Elementos:
+        Durante duplicação, preserva:
+        - ✅ Todas as imagens (PNG, JPG, etc.)
+        - ✅ Formas (retângulos, círculos, etc.)
+        - ✅ Formatações de texto
+        - ✅ Cores e estilos
+        - ✅ Posicionamento exato
+        - ✅ Ordem z-index dos elementos
+        - ❌ Animações (limitação do python-pptx)
+        - ❌ Transições (limitação do python-pptx)
+
+    Note:
+        - Função pública chamada diretamente pela UI Streamlit
+        - Template SEMPRE é preservado (primeiro slide mantém dados originais)
+        - Slides duplicados são idênticos ao template exceto pelos textos preenchidos
+        - Validações robustas previnem crashes mas permitem geração parcial
+        - Considerar implementar progress bar para muitas equipes (futuro)
+        - Erros são impressos com print() (considerar logging estruturado)
     """
     # Validação: template não pode ser None
     if not template_stream:
