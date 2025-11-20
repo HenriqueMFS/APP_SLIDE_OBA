@@ -754,10 +754,10 @@ def _organizar_dados_equipes(registros):
     # Agrupa registros por nome de equipe (cada equipe pode ter múltiplos membros).
     # Registros sem nome de equipe são ignorados pois não podem ser identificados.
     equipes = defaultdict(list)
-    for r in registros:
+    for registro in registros:
         # Validação: registro deve ter chave "Equipe" e não ser vazio
-        if isinstance(r, dict) and r.get("Equipe"):
-            equipes[r["Equipe"]].append(r)
+        if isinstance(registro, dict) and registro.get("Equipe"):
+            equipes[registro["Equipe"]].append(registro)
 
     # Validação: se não houver equipes válidas, retorna lista vazia
     if not equipes:
