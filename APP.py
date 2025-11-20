@@ -851,10 +851,10 @@ def _organizar_dados_equipes(registros):
         nomes_formatados = "\n".join(linhas_nomes)
 
         # Pega informações da equipe (primeira entrada com validação)
-        info = membros[0] if membros else {}
+        dados_equipe = membros[0] if membros else {}
 
-        # Validação: info deve ter dados mínimos necessários
-        if not isinstance(info, dict) or not info.get("Valido"):
+        # Validação: dados_equipe deve ter dados mínimos necessários
+        if not isinstance(dados_equipe, dict) or not dados_equipe.get("Valido"):
             continue
 
         # Extrai partes do nome da equipe com validação
@@ -863,10 +863,10 @@ def _organizar_dados_equipes(registros):
 
         # Monta dict com placeholders para o slide com valores seguros
         dados_finais.append({
-            PLACEHOLDER_VALIDO: f"ALCANCE: {info.get('Valido', '?')} m",
+            PLACEHOLDER_VALIDO: f"ALCANCE: {dados_equipe.get('Valido', '?')} m",
             PLACEHOLDER_EQUIPE: f"Equipe: {equipe_numero}",
-            PLACEHOLDER_ESCOLA: formatar_texto(info.get("Escola", "")),
-            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(info.get('Cidade', ''))} / {formatar_texto(info.get('Estado', ''), True)}",
+            PLACEHOLDER_ESCOLA: formatar_texto(dados_equipe.get("Escola", "")),
+            PLACEHOLDER_CIDADE_UF: f"{formatar_texto(dados_equipe.get('Cidade', ''))} / {formatar_texto(dados_equipe.get('Estado', ''), True)}",
             PLACEHOLDER_ALUNOS: nomes_formatados
         })
 
@@ -1079,21 +1079,21 @@ def duplicate_slide_with_media(apresentacao, source_slide):
     layout = source_slide.slide_layout
     new_slide = apresentacao.slides.add_slide(layout)
     for shape in source_slide.shapes:
-        new_el = deepcopy(shape.element)
+        elemento_shape_copiado = deepcopy(shape.element)
         if shape.shape_type == SHAPE_TYPE_PICTURE:
             try:
-                img_blob = shape.image.blob
+                dados_binarios_imagem = shape.image.blob
             except Exception:
-                img_blob = None
-            if img_blob:
-                image_part, new_rId = new_slide.part.get_or_add_image_part(BytesIO(img_blob))
-                new_el_xml = etree.fromstring(new_el.xml)
-                blips = new_el_xml.findall(f'.//{XML_NAMESPACE_DRAWINGML}blip')
+                dados_binarios_imagem = None
+            if dados_binarios_imagem:
+                image_part, new_rId = new_slide.part.get_or_add_image_part(BytesIO(dados_binarios_imagem))
+                elemento_xml_shape = etree.fromstring(elemento_shape_copiado.xml)
+                blips = elemento_xml_shape.findall(f'.//{XML_NAMESPACE_DRAWINGML}blip')
                 for blip in blips:
                     blip.set(f'{XML_NAMESPACE_RELATIONSHIPS}embed', new_rId)
                 from pptx.oxml import parse_xml
-                new_el = parse_xml(etree.tostring(new_el_xml, encoding='utf-8'))
-        new_slide.shapes._spTree.insert_element_before(new_el, 'p:extLst')
+                elemento_shape_copiado = parse_xml(etree.tostring(elemento_xml_shape, encoding='utf-8'))
+        new_slide.shapes._spTree.insert_element_before(elemento_shape_copiado, 'p:extLst')
     return new_slide
 
 # -------------------- SUBSTITUIÇÃO DE PLACEHOLDERS --------------------
