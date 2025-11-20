@@ -1097,6 +1097,42 @@ def duplicate_slide_with_media(apresentacao, source_slide):
     return new_slide
 
 # -------------------- SUBSTITUIÇÃO DE PLACEHOLDERS --------------------
+def _configurar_formatacao_run(run, texto, tamanho_fonte, cor=COLOR_WHITE, negrito=True, sublinhado=False):
+    """
+    Configura formatação completa de um run de texto (helper DRY).
+
+    Esta função centraliza a formatação repetitiva de runs, eliminando
+    duplicação de código e garantindo consistência visual.
+
+    Args:
+        run: Objeto Run do python-pptx para configurar.
+        texto (str): Texto a ser inserido no run.
+        tamanho_fonte (int): Tamanho da fonte em pontos (ex: 20, 26.5, 28).
+        cor (RGBColor, optional): Cor do texto. Padrão: COLOR_WHITE.
+        negrito (bool, optional): Se o texto deve ser negrito. Padrão: True.
+        sublinhado (bool, optional): Se o texto deve ser sublinhado. Padrão: False.
+
+    Returns:
+        None: Modifica o objeto run in-place.
+
+    Examples:
+        >>> run = paragraph.add_run()
+        >>> _configurar_formatacao_run(run, "Equipe 01", FONT_SIZE_SMALL)
+        >>> # run agora tem: texto="Equipe 01", fonte=Lexend, tamanho=20pt,
+        >>> #                cor=branco, negrito=True
+
+        >>> _configurar_formatacao_run(run, "15.5 m", FONT_SIZE_XLARGE,
+        ...                            cor=COLOR_BLUE, sublinhado=True)
+        >>> # run agora tem formatação para destaque do alcance
+    """
+    run.text = texto
+    run.font.name = FONT_NAME
+    run.font.bold = negrito
+    run.font.size = Pt(tamanho_fonte)
+    run.font.color.rgb = cor
+    if sublinhado:
+        run.font.underline = True
+
 def replace_placeholders_in_shape(shape, team_data):
     """
     Substitui placeholders em uma forma do slide com dados da equipe.
@@ -1169,14 +1205,9 @@ def replace_placeholders_in_shape(shape, team_data):
         for i, nome in enumerate(linhas):
             paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
             run = paragrafo.add_run()
-            run.text = nome
-            run.font.name = FONT_NAME
-            run.font.bold = True
-            if i == len(linhas) - 1:  # última linha = nome da equipe
-                run.font.size = Pt(FONT_SIZE_SMALL)
-            else:
-                run.font.size = Pt(FONT_SIZE_MEDIUM)
-            run.font.color.rgb = COLOR_WHITE
+            # última linha = nome da equipe (tamanho menor)
+            tamanho = FONT_SIZE_SMALL if i == len(linhas) - 1 else FONT_SIZE_MEDIUM
+            _configurar_formatacao_run(run, nome, tamanho)
             paragrafo.alignment = PP_ALIGN.CENTER
         return
 
@@ -1209,19 +1240,10 @@ def replace_placeholders_in_shape(shape, team_data):
             if correspondencia:
                 prefix, valor = correspondencia.groups()
                 run1 = paragraph.add_run()
-                run1.text = prefix
-                run1.font.name = FONT_NAME
-                run1.font.bold = False
-                run1.font.size = Pt(FONT_SIZE_LARGE)
-                run1.font.color.rgb = COLOR_BLUE
+                _configurar_formatacao_run(run1, prefix, FONT_SIZE_LARGE, cor=COLOR_BLUE, negrito=False)
 
                 run2 = paragraph.add_run()
-                run2.text = valor
-                run2.font.name = FONT_NAME
-                run2.font.bold = True
-                run2.font.underline = True
-                run2.font.size = Pt(FONT_SIZE_XLARGE)
-                run2.font.color.rgb = COLOR_BLUE
+                _configurar_formatacao_run(run2, valor, FONT_SIZE_XLARGE, cor=COLOR_BLUE, sublinhado=True)
 
        # --- SOMENTE NOMES ---
         elif chave_selecionada == PLACEHOLDER_ALUNOS:
@@ -1230,21 +1252,13 @@ def replace_placeholders_in_shape(shape, team_data):
             for i, nome in enumerate(linhas):
                 paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
                 run = paragrafo.add_run()
-                run.text = nome
-                run.font.name = FONT_NAME
-                run.font.bold = True
-                run.font.size = Pt(FONT_SIZE_MEDIUM)
-                run.font.color.rgb = COLOR_WHITE
+                _configurar_formatacao_run(run, nome, FONT_SIZE_MEDIUM)
                 paragrafo.alignment = PP_ALIGN.CENTER
 
         # --- NOME DA EQUIPE (se estiver sozinho) ---
         elif chave_selecionada == PLACEHOLDER_EQUIPE:
             run = paragraph.add_run()
-            run.text = texto_novo
-            run.font.name = FONT_NAME
-            run.font.bold = True
-            run.font.size = Pt(FONT_SIZE_SMALL)
-            run.font.color.rgb = COLOR_WHITE
+            _configurar_formatacao_run(run, texto_novo, FONT_SIZE_SMALL)
             paragraph.alignment = PP_ALIGN.CENTER
 
         # --- ESCOLA + CIDADE ---
@@ -1254,21 +1268,13 @@ def replace_placeholders_in_shape(shape, team_data):
             for i, parte in enumerate(partes):
                 paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
                 run = paragrafo.add_run()
-                run.text = parte
-                run.font.name = FONT_NAME
-                run.font.bold = True
-                run.font.size = Pt(FONT_SIZE_SMALL)
-                run.font.color.rgb = COLOR_WHITE
+                _configurar_formatacao_run(run, parte, FONT_SIZE_SMALL)
                 paragrafo.alignment = PP_ALIGN.CENTER
 
         # --- SOMENTE ESCOLA OU CIDADE (caso isolado) ---
         elif chave_selecionada in (PLACEHOLDER_ESCOLA, PLACEHOLDER_CIDADE_UF):
             run = paragraph.add_run()
-            run.text = texto_novo
-            run.font.name = FONT_NAME
-            run.font.bold = True
-            run.font.size = Pt(FONT_SIZE_SMALL)
-            run.font.color.rgb = COLOR_WHITE
+            _configurar_formatacao_run(run, texto_novo, FONT_SIZE_SMALL)
             paragraph.alignment = PP_ALIGN.CENTER
 
 
