@@ -413,23 +413,44 @@ def _identificar_colunas_tabela(cabecalho):
         },
     }
 
-    # Tokenizar cabeçalhos
+    # --- PREPARAÇÃO: Tokenização para Fuzzy Matching ---
+    # Extrai palavras individuais de cada cabeçalho para permitir matching
+    # parcial. Por exemplo: "Nome do Integrante" → ["nome", "do", "integrante"]
+    # Isso permite identificar "nome" mesmo em "Nome da Escola" (com lógica adicional)
     tokens_por_coluna = []
     for cab_norm in header_norm:
+        # Split por caracteres não alfanuméricos: espaços, /, (, ), etc.
         tokens = [tok for tok in re.split(r"[^a-z0-9]+", cab_norm) if tok]
         tokens_por_coluna.append(tokens)
 
-    coluna_por_campo = {}
-    colunas_usadas = set()
+    coluna_por_campo = {}  # Resultado: {campo: índice_coluna}
+    colunas_usadas = set()  # Garante que cada coluna seja usada apenas uma vez
 
     def registrar(campo, idx):
+        """
+        Registra mapeamento campo → coluna se válido.
+
+        Validações:
+        - idx não pode ser None
+        - Coluna não pode ter sido usada por outro campo
+        - Previne mapeamento duplicado de colunas
+
+        Returns True se registrou com sucesso, False caso contrário.
+        """
         if idx is None or idx in colunas_usadas:
             return False
         coluna_por_campo[campo] = idx
         colunas_usadas.add(idx)
         return True
 
-    # Primeira passagem: correspondência exata com aliases
+    # ==================== PASS 1: Correspondência Exata ====================
+    # Tenta correspondência exata (após normalização) com todos os aliases.
+    # Esta passagem tem prioridade sobre fuzzy matching para evitar falsos positivos.
+    #
+    # Exemplo:
+    # - Cabeçalho: "Alcance (m)" → normalizado: "alcance (m)"
+    # - Alias: "alcance (m)" → MATCH exato!
+    # - Resultado: Campo "Valido" mapeado para esta coluna
     for campo, lista_aliases in aliases_norm.items():
         for alias_norm in lista_aliases:
             if not alias_norm:
@@ -442,26 +463,59 @@ def _identificar_colunas_tabela(cabecalho):
             if campo in coluna_por_campo:
                 break
 
-    # Segunda passagem: matching fuzzy com palavras-chave
+    # ==================== PASS 2: Matching Fuzzy ====================
+    # Para campos não identificados no Pass 1, usa matching baseado em palavras-chave.
+    # A ORDEM IMPORTA: campos específicos (Escola) são identificados antes de
+    # campos genéricos (Nome) para evitar que "Nome da Escola" seja identificado
+    # como campo "Nome" em vez de "Escola".
+    #
+    # Estratégia de prioridade:
+    # 1. Valido, Equipe (campos críticos)
+    # 2. Funcao, Escola, Cidade, Estado (campos contextuais)
+    # 3. Nome (campo mais genérico, vem por último)
     prioridade_campos = ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
 
     def combina(campo, tokens, cab_norm):
+        """
+        Verifica se um cabeçalho combina com um campo usando fuzzy matching.
+
+        Estratégia:
+        1. Verifica se alguma palavra-chave do campo está nos tokens do cabeçalho
+        2. Verifica se alguma palavra-chave está contida no cabeçalho normalizado
+        3. Aplica regras especiais de desambiguação para evitar falsos positivos
+
+        Exemplo de desambiguação:
+        - Cabeçalho: "Nome da Escola" → tokens: ["nome", "da", "escola"]
+        - Campo tentando: "Nome"
+        - Detecta token "escola" → NÃO combina (evita falso positivo)
+        - Deixa para campo "Escola" identificar corretamente
+        """
         if not cab_norm:
             return False
         tokens_set = set(tokens)
         chaves = palavras_chave.get(campo, set())
-        # Evita matching incorreto de "Nome" com "Nome da Escola"
+
+        # REGRA ESPECIAL: Desambiguação de "Nome" vs "Nome da Escola"
+        # Se estamos tentando identificar campo "Nome" mas o cabeçalho contém
+        # palavras relacionadas a escola/instituição, NÃO combina.
+        # Isso permite que "Escola" seja identificado corretamente depois.
         if campo == "Nome":
             if tokens_set & {"escola", "colegio", "instituicao"}:
                 return False
+
+        # Matching por tokens: verifica se palavra-chave está nos tokens extraídos
         for chave in chaves:
             if chave in tokens_set:
                 return True
+
+        # Matching por substring: verifica se palavra-chave está contida no cabeçalho
         for chave in chaves:
             if chave and chave in cab_norm:
                 return True
+
         return False
 
+    # Itera pelos campos em ordem de prioridade
     for campo in prioridade_campos:
         if campo in coluna_por_campo:
             continue
@@ -696,20 +750,43 @@ def _organizar_dados_equipes(registros):
     if not isinstance(registros, list):
         return []
 
-    # Agrupa registros por equipe (ignora registros sem nome de equipe)
+    # ==================== AGRUPAMENTO POR EQUIPE ====================
+    # Agrupa registros por nome de equipe (cada equipe pode ter múltiplos membros).
+    # Registros sem nome de equipe são ignorados pois não podem ser identificados.
     equipes = defaultdict(list)
     for r in registros:
         # Validação: registro deve ter chave "Equipe" e não ser vazio
         if isinstance(r, dict) and r.get("Equipe"):
             equipes[r["Equipe"]].append(r)
 
-    # Validação: se não houver equipes, retorna lista vazia
+    # Validação: se não houver equipes válidas, retorna lista vazia
     if not equipes:
         return []
 
-    # Ordena equipes pelo alcance (lançamento válido)
+    # ==================== ORDENAÇÃO POR ALCANCE ====================
+    # Ordena equipes pelo alcance (lançamento válido) do MENOR para MAIOR.
+    # Esta ordenação determina a ordem final dos slides na apresentação.
+    #
+    # Regra de negócio: Todos os membros da mesma equipe têm o mesmo alcance,
+    # então usamos o valor do primeiro membro como representante.
+    #
+    # Tratamento de erros robusto: equipes sem alcance válido vão para o final
+    # (float("inf") garante que sejam as últimas na ordenação).
     def chave_ord(membros):
-        """Extrai chave de ordenação com tratamento de erros robusto"""
+        """
+        Extrai chave de ordenação: alcance do foguete.
+
+        Lógica:
+        - Pega valor "Valido" do primeiro membro (todos têm o mesmo alcance)
+        - Converte vírgula para ponto para parsing numérico correto
+        - Retorna float("inf") se houver qualquer erro (equipe vai pro final)
+
+        Exemplos:
+        - "15.5" → 15.5
+        - "15,5" → 15.5 (vírgula convertida)
+        - "" ou None → float("inf")
+        - "abc" → float("inf") (ValueError capturado)
+        """
         try:
             if not membros or not isinstance(membros, list):
                 return float("inf")
@@ -719,41 +796,58 @@ def _organizar_dados_equipes(registros):
             valido = primeiro.get("Valido", "")
             if not valido:
                 return float("inf")
+            # Substitui vírgula por ponto para suportar formato brasileiro
             return float(str(valido).replace(",", "."))
         except (ValueError, AttributeError, KeyError):
+            # Qualquer erro: equipe vai pro final da lista
             return float("inf")
 
     equipes_ordenadas = sorted(equipes.items(), key=lambda x: chave_ord(x[1]))
 
-    # Formata dados finais para cada equipe
+    # ==================== FORMATAÇÃO DOS DADOS POR EQUIPE ====================
     dados_finais = []
     for equipe_nome, membros in equipes_ordenadas:
         # Validação: membros não podem ser vazios
         if not membros:
             continue
 
-        # Separa membros por função com validação
+        # --- SEPARAÇÃO POR FUNÇÃO (Hierarquia) ---
+        # Regra de negócio: Nomes aparecem no slide na ordem hierárquica:
+        # 1º: Líder (quem comanda a equipe)
+        # 2º: Acompanhante (professor/responsável)
+        # 3º+: Alunos (membros da equipe, em ordem alfabética)
+        #
+        # Nota: Aceita "líder" (com acento) e "lider" (sem acento) pois
+        # dados podem vir com variações de digitação.
         lider = [m for m in membros if isinstance(m, dict) and
                  ("líder" in str(m.get("Funcao", "")).lower() or "lider" in str(m.get("Funcao", "")).lower())]
         acompanhante = [m for m in membros if isinstance(m, dict) and
                         "acompanhante" in str(m.get("Funcao", "")).lower()]
+
+        # Alunos são SEMPRE ordenados alfabeticamente (normalizado) para consistência
         alunos = sorted(
             [m for m in membros if isinstance(m, dict) and "aluno" in str(m.get("Funcao", "")).lower()],
             key=lambda m: normalizar_texto_base(m.get("Nome", ""))
         )
 
-        # Formata nomes com validação
+        # --- EXTRAÇÃO DOS NOMES ---
+        # Pega apenas o primeiro líder e primeiro acompanhante (se houver múltiplos).
+        # Se não houver, string vazia será usada (não aparece no slide).
         nomes_lider = formatar_texto(lider[0].get("Nome", "")) if lider and lider[0].get("Nome") else ""
         nomes_acompanhante = formatar_texto(acompanhante[0].get("Nome", "")) if acompanhante and acompanhante[0].get("Nome") else ""
 
-        # Monta lista de nomes na ordem: líder, acompanhante, alunos
+        # --- CONSTRUÇÃO DA LISTA FINAL DE NOMES ---
+        # Monta lista respeitando hierarquia: líder → acompanhante → alunos
+        # Nomes vazios são automaticamente omitidos (não adicionados à lista)
         linhas_nomes = []
         if nomes_lider:
             linhas_nomes.append(nomes_lider)
         if nomes_acompanhante:
             linhas_nomes.append(nomes_acompanhante)
+        # Adiciona todos os alunos (já ordenados alfabeticamente)
         linhas_nomes += [formatar_texto(a.get("Nome", "")) for a in alunos if a.get("Nome")]
 
+        # Join com newline: cada nome em uma linha no slide
         nomes_formatados = "\n".join(linhas_nomes)
 
         # Pega informações da equipe (primeira entrada com validação)
