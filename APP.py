@@ -819,15 +819,15 @@ def _organizar_dados_equipes(registros):
         #
         # Nota: Aceita "líder" (com acento) e "lider" (sem acento) pois
         # dados podem vir com variações de digitação.
-        lider = [m for m in membros if isinstance(m, dict) and
-                 ("líder" in str(m.get("Funcao", "")).lower() or "lider" in str(m.get("Funcao", "")).lower())]
-        acompanhante = [m for m in membros if isinstance(m, dict) and
-                        "acompanhante" in str(m.get("Funcao", "")).lower()]
+        lider = [membro for membro in membros if isinstance(membro, dict) and
+                 ("líder" in str(membro.get("Funcao", "")).lower() or "lider" in str(membro.get("Funcao", "")).lower())]
+        acompanhante = [membro for membro in membros if isinstance(membro, dict) and
+                        "acompanhante" in str(membro.get("Funcao", "")).lower()]
 
         # Alunos são SEMPRE ordenados alfabeticamente (normalizado) para consistência
         alunos = sorted(
-            [m for m in membros if isinstance(m, dict) and "aluno" in str(m.get("Funcao", "")).lower()],
-            key=lambda m: normalizar_texto_base(m.get("Nome", ""))
+            [membro for membro in membros if isinstance(membro, dict) and "aluno" in str(membro.get("Funcao", "")).lower()],
+            key=lambda membro: normalizar_texto_base(membro.get("Nome", ""))
         )
 
         # --- EXTRAÇÃO DOS NOMES ---
@@ -845,7 +845,7 @@ def _organizar_dados_equipes(registros):
         if nomes_acompanhante:
             linhas_nomes.append(nomes_acompanhante)
         # Adiciona todos os alunos (já ordenados alfabeticamente)
-        linhas_nomes += [formatar_texto(a.get("Nome", "")) for a in alunos if a.get("Nome")]
+        linhas_nomes += [formatar_texto(aluno.get("Nome", "")) for aluno in alunos if aluno.get("Nome")]
 
         # Join com newline: cada nome em uma linha no slide
         nomes_formatados = "\n".join(linhas_nomes)
