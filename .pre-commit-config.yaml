@@ -1,0 +1,170 @@
+# ==================== PRE-COMMIT HOOKS ====================
+# Pre-commit: Framework para gerenciar git hooks
+#
+# Purpose: Executar verificações automáticas antes de cada commit
+# Usage:
+#   - Instalar: pre-commit install
+#   - Executar manualmente: pre-commit run --all-files
+#   - Atualizar hooks: pre-commit autoupdate
+#
+# Clean Code Refactoring - Agent-CLEAN-16
+# Created: 2025-11-19
+
+# --- Global Config ---
+default_stages: [commit]
+fail_fast: false  # Continuar executando hooks mesmo se um falhar
+
+# ==================== HOOKS ====================
+repos:
+  # --- 1. PRE-COMMIT BUILT-IN HOOKS ---
+  # Verificações básicas e correções automáticas
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Verificar se arquivos terminam com newline
+      - id: end-of-file-fixer
+        name: Fix end of files
+        description: Garante que arquivos terminem com newline
+
+      # Remover whitespace no final das linhas
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        description: Remove espaços em branco no final de linhas
+
+      # Verificar sintaxe YAML
+      - id: check-yaml
+        name: Check YAML syntax
+        description: Valida arquivos YAML
+        args: [--safe]
+
+      # Verificar sintaxe TOML
+      - id: check-toml
+        name: Check TOML syntax
+        description: Valida arquivos TOML
+
+      # Verificar JSON
+      - id: check-json
+        name: Check JSON syntax
+        description: Valida arquivos JSON
+
+      # Verificar merge conflicts
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        description: Detecta marcadores de merge conflict
+
+      # Verificar arquivos grandes (>500KB)
+      - id: check-added-large-files
+        name: Check for large files
+        description: Previne commit de arquivos grandes
+        args: [--maxkb=500]
+
+      # Detectar credenciais privadas
+      - id: detect-private-key
+        name: Detect private keys
+        description: Previne commit de chaves privadas
+
+      # Verificar nomes de arquivos
+      - id: check-case-conflict
+        name: Check case conflicts
+        description: Detecta conflitos de case em nomes de arquivos
+
+      # Verificar executables possuem shebang
+      - id: check-executables-have-shebangs
+        name: Check executables have shebangs
+
+  # --- 2. BLACK (Code Formatter) ---
+  # Formatação automática de código Python
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        name: Black code formatter
+        description: Formata código Python (88 chars)
+        language_version: python3.8
+        args: [--line-length=88]
+
+  # --- 3. ISORT (Import Sorter) ---
+  # Organização automática de imports
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort import sorter
+        description: Organiza imports (PEP 8 + black compatible)
+        args: [--profile=black, --line-length=88]
+
+  # --- 4. FLAKE8 (Linter) ---
+  # Verificação de estilo e erros comuns
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: Flake8 linter
+        description: Verifica PEP 8 e erros comuns
+        args: [--max-line-length=88, --extend-ignore=E203,W503,E501]
+        additional_dependencies:
+          - flake8-docstrings  # Verificar docstrings
+          - flake8-bugbear     # Detectar bugs comuns
+          - flake8-comprehensions  # Melhorar comprehensions
+
+  # --- 5. MYPY (Type Checker) ---
+  # Verificação de tipos estática
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy type checker
+        description: Verifica tipos estáticos
+        args: [--ignore-missing-imports, --check-untyped-defs]
+        additional_dependencies:
+          - types-Pillow
+        # Executar apenas em arquivos com type hints
+        exclude: ^tests/
+
+  # --- 6. PYLINT (Advanced Linter) ---
+  # Análise avançada de código
+  - repo: https://github.com/PyCQA/pylint
+    rev: v3.0.3
+    hooks:
+      - id: pylint
+        name: Pylint code analyzer
+        description: Análise avançada de qualidade
+        args:
+          - --max-line-length=88
+          - --disable=C0111,C0103,C0330
+        # Opcional: executar apenas em Python files modificados
+        types: [python]
+
+  # --- 7. BANDIT (Security Linter) ---
+  # Verificação de vulnerabilidades de segurança
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.6
+    hooks:
+      - id: bandit
+        name: Bandit security linter
+        description: Detecta vulnerabilidades de segurança
+        args: [-lll, --recursive, --skip=B101]
+        # Excluir testes (B101 = assert usado em testes)
+
+  # --- 8. COMMITIZEN (Commit Message) ---
+  # Validar mensagens de commit (Conventional Commits)
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.13.0
+    hooks:
+      - id: commitizen
+        name: Commitizen check
+        description: Valida formato de mensagem (Conventional Commits)
+        stages: [commit-msg]
+
+# ==================== CI CONFIGURATION ====================
+ci:
+  # Configurações para execução em CI/CD
+
+  # Atualizar automaticamente versões dos hooks
+  autoupdate_schedule: weekly
+
+  # Executar em todos os arquivos ou apenas modificados
+  skip: []
+
+  # Submodules
+  submodules: false

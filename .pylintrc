@@ -1,0 +1,140 @@
+# ==================== PYLINT CONFIGURATION ====================
+# Pylint: Comprehensive Python code analyzer
+#
+# Purpose: Detectar bugs, code smells e problemas de qualidade
+# Usage: pylint APP.py
+#
+# Clean Code Refactoring - Agent-CLEAN-16
+# Created: 2025-11-19
+
+[MASTER]
+
+# --- Jobs ---
+# Usar múltiplos processos para velocidade (0 = auto-detect CPUs)
+jobs=0
+
+# --- Extensions ---
+# Plugins pylint adicionais
+load-plugins=
+
+# --- Ignore Patterns ---
+# Arquivos/diretórios ignorados
+ignore=CVS,.git,__pycache__,.venv,venv,build,dist
+
+[MESSAGES CONTROL]
+
+# --- Disabled Checks ---
+# Desabilitar verificações específicas com justificativa:
+#
+# C0111 (missing-docstring): Usamos mypy para type hints, docstrings são opcionais
+# C0103 (invalid-name): Permitir nomes curtos em contextos óbvios (i, j, x, y)
+# R0913 (too-many-arguments): Às vezes necessário, será tratado caso a caso
+# R0914 (too-many-locals): Será tratado durante refatoração de funções
+# W0212 (protected-access): Permitir acesso a _private em casos justificados
+# C0330 (bad-continuation): Conflita com black
+disable=C0111,C0103,C0330
+
+[FORMAT]
+
+# --- Line Length ---
+# Consistente com black e flake8
+max-line-length=88
+
+# --- Indentation ---
+# Espaços, não tabs (PEP 8)
+indent-string='    '
+indent-after-paren=4
+
+[BASIC]
+
+# --- Naming Conventions ---
+# Padrões de nomenclatura (Clean Code emphasis)
+
+# Constantes: UPPER_CASE_WITH_UNDERSCORES
+const-naming-style=UPPER_CASE
+
+# Variáveis: snake_case
+variable-naming-style=snake_case
+
+# Funções: snake_case
+function-naming-style=snake_case
+
+# Métodos: snake_case
+method-naming-style=snake_case
+
+# Classes: PascalCase
+class-naming-style=PascalCase
+
+# Módulos: snake_case
+module-naming-style=snake_case
+
+# --- Good Names ---
+# Permitir nomes curtos comuns em loops e coordenadas
+good-names=i,j,k,x,y,z,id,_,st,pt,df
+
+[DESIGN]
+
+# --- Complexity Limits ---
+# Limites de complexidade (Clean Code goals)
+
+# Máximo de argumentos por função (Clean Code: ≤3, mas começamos com 7)
+max-args=7
+
+# Máximo de variáveis locais (Clean Code: <10)
+max-locals=15
+
+# Máximo de branches (if/elif/else) (Clean Code: <5)
+max-branches=12
+
+# Máximo de statements em função (Clean Code: <20)
+max-statements=50
+
+# Complexidade ciclomática máxima (Clean Code: <10)
+max-complexity=10
+
+[SIMILARITIES]
+
+# --- Code Duplication ---
+# Detectar código duplicado (DRY principle)
+
+# Mínimo de linhas similares para reportar duplicação
+min-similarity-lines=4
+
+# Ignorar comentários ao detectar similaridade
+ignore-comments=yes
+
+# Ignorar docstrings ao detectar similaridade
+ignore-docstrings=yes
+
+# Ignorar imports ao detectar similaridade
+ignore-imports=yes
+
+[TYPECHECK]
+
+# --- Type Checking ---
+# Ignorar membros gerados dinamicamente por bibliotecas conhecidas
+ignored-modules=streamlit,pptx,docx
+
+# Não gerar warnings para atributos dinâmicos
+generated-members=
+
+[REFACTORING]
+
+# --- Refactoring Suggestions ---
+# Máximo de nested blocks (Clean Code: ≤3)
+max-nested-blocks=5
+
+[REPORTS]
+
+# --- Output Format ---
+# Formato de saída limpo e parseable
+output-format=colorized
+
+# Mostrar score de qualidade do código (0-10)
+score=yes
+
+[EXCEPTIONS]
+
+# --- Exception Handling ---
+# Detectar bare excepts e problemas com exceções
+overgeneral-exceptions=BaseException,Exception

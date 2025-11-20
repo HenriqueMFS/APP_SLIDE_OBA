@@ -1,0 +1,56 @@
+# ==================== FLAKE8 CONFIGURATION ====================
+# Flake8: Python linter for style guide enforcement (PEP 8)
+#
+# Purpose: Catch common coding issues and enforce consistent style
+# Usage: flake8 APP.py
+#
+# Clean Code Refactoring - Agent-CLEAN-16
+# Created: 2025-11-19
+
+[flake8]
+
+# --- Line Length ---
+# Seguindo padrão Black (88 caracteres)
+# 88 é o sweet spot: legível mas não muito restritivo
+max-line-length = 88
+
+# --- Ignored Rules ---
+# E203: Whitespace before ':' (conflita com black)
+# W503: Line break before binary operator (conflita com PEP 8 atualizado)
+# E501: Line too long (já tratado por black)
+extend-ignore = E203, W503, E501
+
+# --- Exclude Patterns ---
+# Diretórios que não devem ser verificados
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    build,
+    dist,
+    *.egg-info,
+    .tox,
+    .mypy_cache,
+    .pytest_cache,
+    docs/
+
+# --- Complexity ---
+# Limitar complexidade ciclomática (Clean Code: <10)
+max-complexity = 10
+
+# --- Docstrings ---
+# Exigir docstrings em módulos, classes e funções públicas
+docstring-convention = google
+
+# --- Per-file Ignores ---
+# Permitir exceções específicas por arquivo
+# Exemplo: __init__.py pode ter imports não utilizados
+per-file-ignores =
+    __init__.py:F401
+
+# --- Import Order ---
+# Verificar ordem de imports (stdlib → third-party → local)
+import-order-style = google
+application-import-names = app_slide_oba
