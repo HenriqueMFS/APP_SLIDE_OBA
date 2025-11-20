@@ -330,7 +330,7 @@ def _identificar_colunas_tabela(cabecalho):
     if not any(texto.strip() for texto in cabecalho):
         return {}
 
-    header_norm = [normalizar_texto_base(texto) for texto in cabecalho]
+    cabecalhos_normalizados = [normalizar_texto_base(texto) for texto in cabecalho]
 
     # Definição de aliases para cada campo
     aliases = {
@@ -382,7 +382,7 @@ def _identificar_colunas_tabela(cabecalho):
         ],
     }
 
-    aliases_norm = {
+    aliases_normalizados = {
         campo: [normalizar_texto_base(alias) for alias in lista]
         for campo, lista in aliases.items()
     }
@@ -418,7 +418,7 @@ def _identificar_colunas_tabela(cabecalho):
     # parcial. Por exemplo: "Nome do Integrante" → ["nome", "do", "integrante"]
     # Isso permite identificar "nome" mesmo em "Nome da Escola" (com lógica adicional)
     tokens_por_coluna = []
-    for cab_norm in header_norm:
+    for cab_norm in cabecalhos_normalizados:
         # Split por caracteres não alfanuméricos: espaços, /, (, ), etc.
         tokens = [tok for tok in re.split(r"[^a-z0-9]+", cab_norm) if tok]
         tokens_por_coluna.append(tokens)
@@ -451,11 +451,11 @@ def _identificar_colunas_tabela(cabecalho):
     # - Cabeçalho: "Alcance (m)" → normalizado: "alcance (m)"
     # - Alias: "alcance (m)" → MATCH exato!
     # - Resultado: Campo "Valido" mapeado para esta coluna
-    for campo, lista_aliases in aliases_norm.items():
+    for campo, lista_aliases in aliases_normalizados.items():
         for alias_norm in lista_aliases:
             if not alias_norm:
                 continue
-            for idx, cab_norm in enumerate(header_norm):
+            for idx, cab_norm in enumerate(cabecalhos_normalizados):
                 if idx in colunas_usadas:
                     continue
                 if cab_norm == alias_norm and _registrar_mapeamento_coluna(campo, idx):
@@ -522,7 +522,7 @@ def _identificar_colunas_tabela(cabecalho):
         for idx, tokens in enumerate(tokens_por_coluna):
             if idx in colunas_usadas:
                 continue
-            if _verifica_combinacao_fuzzy(campo, tokens, header_norm[idx]):
+            if _verifica_combinacao_fuzzy(campo, tokens, cabecalhos_normalizados[idx]):
                 _registrar_mapeamento_coluna(campo, idx)
                 break
 
@@ -1181,33 +1181,33 @@ def replace_placeholders_in_shape(shape, team_data):
         return
 
     for paragraph in list(caixa_texto.paragraphs):
-        full_text = "".join(run.text for run in paragraph.runs)
+        texto_completo = "".join(run.text for run in paragraph.runs)
 
         # --- Corrige placeholders colados (ex: {{NOME_ESCOLA}}{{CIDADE_UF}} ou {{NOMES_ALUNOS}}{{NOME_EQUIPE}}) ---
-        full_text = full_text.replace("}}{{", "}}\n{{")
+        texto_completo = texto_completo.replace("}}{{", "}}\n{{")
 
-        selected_key = None
+        chave_selecionada = None
         for k in team_data.keys():
-            if k in full_text:
-                selected_key = k
+            if k in texto_completo:
+                chave_selecionada = k
                 break
-        if not selected_key:
+        if not chave_selecionada:
             continue
 
         # Substitui placeholders por valores
-        new_text = full_text
+        texto_novo = texto_completo
         for k, v in team_data.items():
-            new_text = new_text.replace(k, v)
+            texto_novo = texto_novo.replace(k, v)
 
         # Limpa runs antigos
         while paragraph.runs:
             paragraph._p.remove(paragraph.runs[0]._r)
 
         # --- ALCANCE ---
-        if selected_key == PLACEHOLDER_VALIDO:
-            match = re.match(r"(ALCANCE:\s*)([\d,.]+ m)", new_text, re.IGNORECASE)
-            if match:
-                prefix, valor = match.groups()
+        if chave_selecionada == PLACEHOLDER_VALIDO:
+            correspondencia = re.match(r"(ALCANCE:\s*)([\d,.]+ m)", texto_novo, re.IGNORECASE)
+            if correspondencia:
+                prefix, valor = correspondencia.groups()
                 run1 = paragraph.add_run()
                 run1.text = prefix
                 run1.font.name = FONT_NAME
@@ -1224,7 +1224,7 @@ def replace_placeholders_in_shape(shape, team_data):
                 run2.font.color.rgb = COLOR_BLUE
 
        # --- SOMENTE NOMES ---
-        elif selected_key == PLACEHOLDER_ALUNOS:
+        elif chave_selecionada == PLACEHOLDER_ALUNOS:
             caixa_texto.clear()
             linhas = team_data[PLACEHOLDER_ALUNOS].split("\n")
             for i, nome in enumerate(linhas):
@@ -1238,9 +1238,9 @@ def replace_placeholders_in_shape(shape, team_data):
                 paragrafo.alignment = PP_ALIGN.CENTER
 
         # --- NOME DA EQUIPE (se estiver sozinho) ---
-        elif selected_key == PLACEHOLDER_EQUIPE:
+        elif chave_selecionada == PLACEHOLDER_EQUIPE:
             run = paragraph.add_run()
-            run.text = new_text
+            run.text = texto_novo
             run.font.name = FONT_NAME
             run.font.bold = True
             run.font.size = Pt(FONT_SIZE_SMALL)
@@ -1248,7 +1248,7 @@ def replace_placeholders_in_shape(shape, team_data):
             paragraph.alignment = PP_ALIGN.CENTER
 
         # --- ESCOLA + CIDADE ---
-        elif PLACEHOLDER_ESCOLA in full_text and PLACEHOLDER_CIDADE_UF in full_text:
+        elif PLACEHOLDER_ESCOLA in texto_completo and PLACEHOLDER_CIDADE_UF in texto_completo:
             caixa_texto.clear()
             partes = [team_data[PLACEHOLDER_ESCOLA], team_data[PLACEHOLDER_CIDADE_UF]]
             for i, parte in enumerate(partes):
@@ -1262,9 +1262,9 @@ def replace_placeholders_in_shape(shape, team_data):
                 paragrafo.alignment = PP_ALIGN.CENTER
 
         # --- SOMENTE ESCOLA OU CIDADE (caso isolado) ---
-        elif selected_key in (PLACEHOLDER_ESCOLA, PLACEHOLDER_CIDADE_UF):
+        elif chave_selecionada in (PLACEHOLDER_ESCOLA, PLACEHOLDER_CIDADE_UF):
             run = paragraph.add_run()
-            run.text = new_text
+            run.text = texto_novo
             run.font.name = FONT_NAME
             run.font.bold = True
             run.font.size = Pt(FONT_SIZE_SMALL)
