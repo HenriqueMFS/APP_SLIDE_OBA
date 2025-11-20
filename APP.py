@@ -426,21 +426,21 @@ def _identificar_colunas_tabela(cabecalho):
     coluna_por_campo = {}  # Resultado: {campo: índice_coluna}
     colunas_usadas = set()  # Garante que cada coluna seja usada apenas uma vez
 
-    def registrar(campo, idx):
+    def registrar(campo, indice):
         """
         Registra mapeamento campo → coluna se válido.
 
         Validações:
-        - idx não pode ser None
+        - indice não pode ser None
         - Coluna não pode ter sido usada por outro campo
         - Previne mapeamento duplicado de colunas
 
         Returns True se registrou com sucesso, False caso contrário.
         """
-        if idx is None or idx in colunas_usadas:
+        if indice is None or indice in colunas_usadas:
             return False
-        coluna_por_campo[campo] = idx
-        colunas_usadas.add(idx)
+        coluna_por_campo[campo] = indice
+        colunas_usadas.add(indice)
         return True
 
     # ==================== PASS 1: Correspondência Exata ====================
@@ -615,9 +615,9 @@ def _processar_linhas_tabela(tabela, coluna_por_campo, campos_esperados):
         """Obtém valor de uma célula com validação de índice"""
         if not linha_celulas:
             return ""
-        idx = coluna_por_campo.get(chave)
-        if idx is not None and 0 <= idx < len(linha_celulas):
-            return linha_celulas[idx].strip()
+        indice_coluna = coluna_por_campo.get(chave)
+        if indice_coluna is not None and 0 <= indice_coluna < len(linha_celulas):
+            return linha_celulas[indice_coluna].strip()
         return ""
 
     for linha in tabela.rows[1:]:  # Pula o cabeçalho
@@ -990,20 +990,20 @@ def extrair_dados(uploaded_file):
         return []
 
     try:
-        doc = Document(uploaded_file)
+        documento = Document(uploaded_file)
     except Exception as e:
         # Erro ao abrir o documento
         print(f"Erro ao abrir documento: {e}")
         return []
 
     # Validação: documento deve ter tabelas
-    if not doc.tables:
+    if not documento.tables:
         return []
 
     registros = []
 
     # Processa todas as tabelas do documento
-    for tabela in doc.tables:
+    for tabela in documento.tables:
         if not tabela or not tabela.rows:
             continue
 
@@ -1034,7 +1034,7 @@ def extrair_dados(uploaded_file):
     return dados_finais
 
 # -------------------- DUPLICAÇÃO DE SLIDE --------------------
-def duplicate_slide_with_media(prs, source_slide):
+def duplicate_slide_with_media(apresentacao, source_slide):
     """
     Duplica um slide preservando imagens e elementos visuais.
 
@@ -1043,7 +1043,7 @@ def duplicate_slide_with_media(prs, source_slide):
     para manter a formatação e design do template ao gerar múltiplos slides.
 
     Args:
-        prs (Presentation): Objeto de apresentação python-pptx onde o novo
+        apresentacao (Presentation): Objeto de apresentação python-pptx onde o novo
             slide será adicionado.
         source_slide (Slide): Slide original a ser duplicado.
 
@@ -1052,9 +1052,9 @@ def duplicate_slide_with_media(prs, source_slide):
             todas as imagens e elementos visuais.
 
     Examples:
-        >>> prs = Presentation("template.pptx")
-        >>> slide_original = prs.slides[0]
-        >>> novo_slide = duplicate_slide_with_media(prs, slide_original)
+        >>> apresentacao = Presentation("template.pptx")
+        >>> slide_original = apresentacao.slides[0]
+        >>> novo_slide = duplicate_slide_with_media(apresentacao, slide_original)
         >>> print(len(novo_slide.shapes))  # Mesmo número de elementos
         5
 
@@ -1077,7 +1077,7 @@ def duplicate_slide_with_media(prs, source_slide):
         - Trata erros de imagens corrompidas gracefully
     """
     layout = source_slide.slide_layout
-    new_slide = prs.slides.add_slide(layout)
+    new_slide = apresentacao.slides.add_slide(layout)
     for shape in source_slide.shapes:
         new_el = deepcopy(shape.element)
         if shape.shape_type == SHAPE_TYPE_PICTURE:
@@ -1311,16 +1311,16 @@ def gerar_apresentacao(dados, template_stream):
         >>> docx_file = st.file_uploader("DOCX", type=["docx"])
         >>> pptx_template = st.file_uploader("Template PPTX", type=["pptx"])
         >>> dados = extrair_dados(docx_file)
-        >>> prs = gerar_apresentacao(dados, pptx_template)
+        >>> apresentacao = gerar_apresentacao(dados, pptx_template)
         >>> buf = BytesIO()
-        >>> prs.save(buf)
+        >>> apresentacao.save(buf)
         >>> st.download_button("Baixar", data=buf, file_name="resultado.pptx")
 
         >>> # Uso programático
         >>> with open("dados.docx", "rb") as docx, open("template.pptx", "rb") as pptx:
         ...     dados = extrair_dados(docx)
-        ...     prs = gerar_apresentacao(dados, pptx)
-        ...     prs.save("resultado.pptx")
+        ...     apresentacao = gerar_apresentacao(dados, pptx)
+        ...     apresentacao.save("resultado.pptx")
 
     Pipeline de Geração:
         1. **Validação do Template**:
@@ -1416,25 +1416,25 @@ def gerar_apresentacao(dados, template_stream):
         return None
 
     try:
-        prs = Presentation(template_stream)
+        apresentacao = Presentation(template_stream)
     except Exception as e:
         print(f"Erro ao abrir template PPTX: {e}")
         return None
 
     # Validação: dados e slides do template
     if not dados or not isinstance(dados, list):
-        return prs
+        return apresentacao
 
-    if not prs.slides or len(prs.slides) == 0:
-        return prs
+    if not apresentacao.slides or len(apresentacao.slides) == 0:
+        return apresentacao
 
-    modelo = prs.slides[0]
+    modelo = apresentacao.slides[0]
     slides_para_preencher = [modelo]
 
     # Duplica slides conforme necessário
     for _ in range(len(dados) - 1):
         try:
-            novo_slide = duplicate_slide_with_media(prs, modelo)
+            novo_slide = duplicate_slide_with_media(apresentacao, modelo)
             if novo_slide:
                 slides_para_preencher.append(novo_slide)
         except Exception as e:
@@ -1452,7 +1452,7 @@ def gerar_apresentacao(dados, template_stream):
             print(f"Erro ao preencher placeholders: {e}")
             continue
 
-    return prs
+    return apresentacao
 
 # -------------------- INTERFACE STREAMLIT --------------------
 docx_file = st.file_uploader("📄 Arquivo DOCX", type=["docx"])
