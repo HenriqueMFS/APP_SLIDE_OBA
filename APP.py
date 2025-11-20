@@ -1157,18 +1157,18 @@ def replace_placeholders_in_shape(shape, team_data):
     if not shape.has_text_frame:
         return
 
-    tf = shape.text_frame
+    caixa_texto = shape.text_frame
 
     # Quando os placeholders de nomes e equipe estão na mesma caixa de texto, mas em
     # parágrafos diferentes, lidamos com todos de uma vez para garantir que as duas
     # informações sejam aplicadas com o mesmo estilo.
-    frame_text = "\n".join("".join(run.text for run in paragraph.runs) for paragraph in tf.paragraphs)
+    frame_text = "\n".join("".join(run.text for run in paragraph.runs) for paragraph in caixa_texto.paragraphs)
     if PLACEHOLDER_ALUNOS in frame_text and PLACEHOLDER_EQUIPE in frame_text:
-        tf.clear()
+        caixa_texto.clear()
         linhas = team_data[PLACEHOLDER_ALUNOS].split("\n") + [team_data[PLACEHOLDER_EQUIPE]]
         for i, nome in enumerate(linhas):
-            p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
-            run = p.add_run()
+            paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
+            run = paragrafo.add_run()
             run.text = nome
             run.font.name = FONT_NAME
             run.font.bold = True
@@ -1177,10 +1177,10 @@ def replace_placeholders_in_shape(shape, team_data):
             else:
                 run.font.size = Pt(FONT_SIZE_MEDIUM)
             run.font.color.rgb = COLOR_WHITE
-            p.alignment = PP_ALIGN.CENTER
+            paragrafo.alignment = PP_ALIGN.CENTER
         return
 
-    for paragraph in list(tf.paragraphs):
+    for paragraph in list(caixa_texto.paragraphs):
         full_text = "".join(run.text for run in paragraph.runs)
 
         # --- Corrige placeholders colados (ex: {{NOME_ESCOLA}}{{CIDADE_UF}} ou {{NOMES_ALUNOS}}{{NOME_EQUIPE}}) ---
@@ -1225,17 +1225,17 @@ def replace_placeholders_in_shape(shape, team_data):
 
        # --- SOMENTE NOMES ---
         elif selected_key == PLACEHOLDER_ALUNOS:
-            tf.clear()
+            caixa_texto.clear()
             linhas = team_data[PLACEHOLDER_ALUNOS].split("\n")
             for i, nome in enumerate(linhas):
-                p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
-                run = p.add_run()
+                paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
+                run = paragrafo.add_run()
                 run.text = nome
                 run.font.name = FONT_NAME
                 run.font.bold = True
                 run.font.size = Pt(FONT_SIZE_MEDIUM)
                 run.font.color.rgb = COLOR_WHITE
-                p.alignment = PP_ALIGN.CENTER
+                paragrafo.alignment = PP_ALIGN.CENTER
 
         # --- NOME DA EQUIPE (se estiver sozinho) ---
         elif selected_key == PLACEHOLDER_EQUIPE:
@@ -1249,17 +1249,17 @@ def replace_placeholders_in_shape(shape, team_data):
 
         # --- ESCOLA + CIDADE ---
         elif PLACEHOLDER_ESCOLA in full_text and PLACEHOLDER_CIDADE_UF in full_text:
-            tf.clear()
+            caixa_texto.clear()
             partes = [team_data[PLACEHOLDER_ESCOLA], team_data[PLACEHOLDER_CIDADE_UF]]
             for i, parte in enumerate(partes):
-                p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
-                run = p.add_run()
+                paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
+                run = paragrafo.add_run()
                 run.text = parte
                 run.font.name = FONT_NAME
                 run.font.bold = True
                 run.font.size = Pt(FONT_SIZE_SMALL)
                 run.font.color.rgb = COLOR_WHITE
-                p.alignment = PP_ALIGN.CENTER
+                paragrafo.alignment = PP_ALIGN.CENTER
 
         # --- SOMENTE ESCOLA OU CIDADE (caso isolado) ---
         elif selected_key in (PLACEHOLDER_ESCOLA, PLACEHOLDER_CIDADE_UF):
