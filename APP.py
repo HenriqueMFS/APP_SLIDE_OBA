@@ -1133,6 +1133,38 @@ def _configurar_formatacao_run(run, texto, tamanho_fonte, cor=COLOR_WHITE, negri
     if sublinhado:
         run.font.underline = True
 
+def _adicionar_paragrafos_formatados(caixa_texto, linhas_texto, tamanho_fonte, cor=COLOR_WHITE):
+    """
+    Adiciona múltiplos parágrafos formatados a uma caixa de texto (helper DRY).
+
+    Esta função elimina duplicação ao criar múltiplos parágrafos com formatação
+    consistente, centralizando a lógica de limpar, adicionar parágrafos e aplicar estilo.
+
+    Args:
+        caixa_texto: Objeto TextFrame do python-pptx.
+        linhas_texto (list[str]): Lista de strings, uma por parágrafo.
+        tamanho_fonte (int): Tamanho da fonte em pontos para todos os parágrafos.
+        cor (RGBColor, optional): Cor do texto. Padrão: COLOR_WHITE.
+
+    Returns:
+        None: Modifica caixa_texto in-place.
+
+    Examples:
+        >>> nomes = ["Maria Silva", "João Santos", "Ana Costa"]
+        >>> _adicionar_paragrafos_formatados(text_frame, nomes, FONT_SIZE_MEDIUM)
+        >>> # Cria 3 parágrafos centralizados com fonte média branca
+
+        >>> dados = ["Escola ABC", "São Paulo / SP"]
+        >>> _adicionar_paragrafos_formatados(text_frame, dados, FONT_SIZE_SMALL)
+        >>> # Cria 2 parágrafos para escola e cidade
+    """
+    caixa_texto.clear()
+    for i, texto in enumerate(linhas_texto):
+        paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
+        run = paragrafo.add_run()
+        _configurar_formatacao_run(run, texto, tamanho_fonte, cor=cor)
+        paragrafo.alignment = PP_ALIGN.CENTER
+
 def replace_placeholders_in_shape(shape, team_data):
     """
     Substitui placeholders em uma forma do slide com dados da equipe.
@@ -1247,13 +1279,8 @@ def replace_placeholders_in_shape(shape, team_data):
 
        # --- SOMENTE NOMES ---
         elif chave_selecionada == PLACEHOLDER_ALUNOS:
-            caixa_texto.clear()
             linhas = team_data[PLACEHOLDER_ALUNOS].split("\n")
-            for i, nome in enumerate(linhas):
-                paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
-                run = paragrafo.add_run()
-                _configurar_formatacao_run(run, nome, FONT_SIZE_MEDIUM)
-                paragrafo.alignment = PP_ALIGN.CENTER
+            _adicionar_paragrafos_formatados(caixa_texto, linhas, FONT_SIZE_MEDIUM)
 
         # --- NOME DA EQUIPE (se estiver sozinho) ---
         elif chave_selecionada == PLACEHOLDER_EQUIPE:
@@ -1263,13 +1290,8 @@ def replace_placeholders_in_shape(shape, team_data):
 
         # --- ESCOLA + CIDADE ---
         elif PLACEHOLDER_ESCOLA in texto_completo and PLACEHOLDER_CIDADE_UF in texto_completo:
-            caixa_texto.clear()
             partes = [team_data[PLACEHOLDER_ESCOLA], team_data[PLACEHOLDER_CIDADE_UF]]
-            for i, parte in enumerate(partes):
-                paragrafo = caixa_texto.add_paragraph() if i > 0 else caixa_texto.paragraphs[0]
-                run = paragrafo.add_run()
-                _configurar_formatacao_run(run, parte, FONT_SIZE_SMALL)
-                paragrafo.alignment = PP_ALIGN.CENTER
+            _adicionar_paragrafos_formatados(caixa_texto, partes, FONT_SIZE_SMALL)
 
         # --- SOMENTE ESCOLA OU CIDADE (caso isolado) ---
         elif chave_selecionada in (PLACEHOLDER_ESCOLA, PLACEHOLDER_CIDADE_UF):
