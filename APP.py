@@ -122,6 +122,88 @@ XML_NAMESPACE_RELATIONSHIPS = (
     "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 )
 
+# --- Configuração de Identificação de Colunas ---
+# Aliases para reconhecimento automático de colunas em tabelas DOCX
+# Usados pelo algoritmo de matching em _identificar_colunas_tabela()
+ALIASES_COLUNAS = {
+    "Valido": [
+        "valido",
+        "alcance",
+        "lancamentos validos",
+        "alcance (m)",
+        "distancia",
+        "distancia (m)",
+    ],
+    "Equipe": [
+        "equipe",
+        "nome da equipe",
+    ],
+    "Funcao": [
+        "funcao",
+        "funcao/role",
+        "funcao na equipe",
+        "funcao integrante",
+        "papel",
+        "cargo",
+    ],
+    "Escola": [
+        "escola",
+        "nome da escola",
+        "instituicao",
+        "nome da instituicao",
+        "colegio",
+        "nome do colegio",
+    ],
+    "Cidade": [
+        "cidade",
+        "municipio",
+    ],
+    "Estado": [
+        "estado",
+        "uf",
+    ],
+    "Nome": [
+        "nome",
+        "nome do integrante",
+        "nome integrante",
+        "nome do aluno",
+        "nome participante",
+        "integrante",
+        "participante",
+        "aluno",
+    ],
+}
+
+# Palavras-chave para matching fuzzy (Pass 2 do algoritmo)
+PALAVRAS_CHAVE_COLUNAS = {
+    "Valido": {"alcance", "valido", "validos", "lancamento", "lancamentos", "distancia"},
+    "Equipe": {"equipe", "time", "grupo"},
+    "Funcao": {"funcao", "papel", "cargo"},
+    "Escola": {"escola", "colegio", "instituicao"},
+    "Cidade": {"cidade", "municipio"},
+    "Estado": {"estado", "uf"},
+    "Nome": {
+        "nome",
+        "nomes",
+        "aluno",
+        "alunos",
+        "integrante",
+        "integrantes",
+        "participante",
+        "participantes",
+        "membro",
+        "membros",
+        "lider",
+        "acompanhante",
+        "responsavel",
+        "responsaveis",
+    },
+}
+
+# Ordem de prioridade para matching fuzzy (evita conflitos)
+PRIORIDADE_CAMPOS = ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
+
+
 # -------------------- CONFIGURAÇÃO INICIAL --------------------
 st.set_page_config(layout=PAGE_LAYOUT)
 logo = Image.open(LOGO_PATH)
@@ -332,85 +414,10 @@ def _identificar_colunas_tabela(cabecalho):
 
     cabecalhos_normalizados = [normalizar_texto_base(texto) for texto in cabecalho]
 
-    # Definição de aliases para cada campo
-    aliases = {
-        "Valido": [
-            "valido",
-            "alcance",
-            "lancamentos validos",
-            "alcance (m)",
-            "distancia",
-            "distancia (m)",
-        ],
-        "Equipe": [
-            "equipe",
-            "nome da equipe",
-        ],
-        "Funcao": [
-            "funcao",
-            "funcao/role",
-            "funcao na equipe",
-            "funcao integrante",
-            "papel",
-            "cargo",
-        ],
-        "Escola": [
-            "escola",
-            "nome da escola",
-            "instituicao",
-            "nome da instituicao",
-            "colegio",
-            "nome do colegio",
-        ],
-        "Cidade": [
-            "cidade",
-            "municipio",
-        ],
-        "Estado": [
-            "estado",
-            "uf",
-        ],
-        "Nome": [
-            "nome",
-            "nome do integrante",
-            "nome integrante",
-            "nome do aluno",
-            "nome participante",
-            "integrante",
-            "participante",
-            "aluno",
-        ],
-    }
-
+    # Usa aliases e palavras-chave definidos como constantes globais
     aliases_normalizados = {
         campo: [normalizar_texto_base(alias) for alias in lista]
-        for campo, lista in aliases.items()
-    }
-
-    # Palavras-chave para matching fuzzy
-    palavras_chave = {
-        "Valido": {"alcance", "valido", "validos", "lancamento", "lancamentos", "distancia"},
-        "Equipe": {"equipe", "time", "grupo"},
-        "Funcao": {"funcao", "papel", "cargo"},
-        "Escola": {"escola", "colegio", "instituicao"},
-        "Cidade": {"cidade", "municipio"},
-        "Estado": {"estado", "uf"},
-        "Nome": {
-            "nome",
-            "nomes",
-            "aluno",
-            "alunos",
-            "integrante",
-            "integrantes",
-            "participante",
-            "participantes",
-            "membro",
-            "membros",
-            "lider",
-            "acompanhante",
-            "responsavel",
-            "responsaveis",
-        },
+        for campo, lista in ALIASES_COLUNAS.items()
     }
 
     # --- PREPARAÇÃO: Tokenização para Fuzzy Matching ---
@@ -473,7 +480,7 @@ def _identificar_colunas_tabela(cabecalho):
     # 1. Valido, Equipe (campos críticos)
     # 2. Funcao, Escola, Cidade, Estado (campos contextuais)
     # 3. Nome (campo mais genérico, vem por último)
-    prioridade_campos = ["Valido", "Equipe", "Funcao", "Escola", "Cidade", "Estado", "Nome"]
+    # Ordem definida em PRIORIDADE_CAMPOS (constante global)
 
     def _verifica_combinacao_fuzzy(campo, tokens, cab_norm):
         """
@@ -493,7 +500,7 @@ def _identificar_colunas_tabela(cabecalho):
         if not cab_norm:
             return False
         tokens_set = set(tokens)
-        chaves = palavras_chave.get(campo, set())
+        chaves = PALAVRAS_CHAVE_COLUNAS.get(campo, set())
 
         # REGRA ESPECIAL: Desambiguação de "Nome" vs "Nome da Escola"
         # Se estamos tentando identificar campo "Nome" mas o cabeçalho contém
@@ -516,7 +523,7 @@ def _identificar_colunas_tabela(cabecalho):
         return False
 
     # Itera pelos campos em ordem de prioridade
-    for campo in prioridade_campos:
+    for campo in PRIORIDADE_CAMPOS:
         if campo in coluna_por_campo:
             continue
         for idx, tokens in enumerate(tokens_por_coluna):
